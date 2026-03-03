@@ -193,11 +193,11 @@ Claude token cost:  $$$                          $
 
 **Compression ratio by `detail_level`:**
 
-| Level | Compression | Output Size | Best For |
-|-------|------------|-------------|----------|
-| `summary` | 40-100x | ~2-5K tokens | Quick orientation, file inventory |
-| `normal` | 15-40x | ~5-15K tokens | Architecture review, dependency mapping |
-| `detailed` | 5-15x | ~15-40K tokens | Security audit with code snippets |
+| Level | Compression | Output Size | Equivalent Source | Best For |
+|-------|------------|-------------|-------------------|----------|
+| `summary` | 40-100x | ~2-5K tokens | ~8-20K chars / ~200-500 lines of code | Quick orientation, file inventory |
+| `normal` | 15-40x | ~5-15K tokens | ~20-60K chars / ~500-1500 lines of code | Architecture review, dependency mapping |
+| `detailed` | 5-15x | ~15-40K tokens | ~60-160K chars / ~1500-4000 lines of code | Security audit with code snippets |
 
 **When savings happen:**
 - Large codebases (50+ files) — architecture understanding, cross-file scanning
