@@ -7,7 +7,7 @@
 MCP 伺服器，將 [Kimi Code](https://www.kimi.com/code)（K2.5，256K 上下文）與 [Claude Code](https://docs.anthropic.com/en/docs/claude-code) 串接——Claude 當指揮家，Kimi 負責大量閱讀。
 
 <div align="center">
-  <img src="assets/llm-cost-vs-intelligence.jpg" alt="LLM 成本 vs 智能 — Kimi K2.5 以極低成本提供前沿級智能" width="720" />
+  <img src="assets/llm-cost-vs-intelligence.png" alt="LLM 成本 vs 智能 — Kimi K2.5 以極低成本提供前沿級智能" width="720" />
   <br />
   <sub>Kimi K2.5 位於效率前沿——接近 Claude 的智能水準，成本僅 1/10。 <a href="https://www.kimi.com/code">kimi.com/code</a></sub>
 </div>
