@@ -15,6 +15,8 @@ export interface KimiRunConfig {
   thinking?: boolean
   /** Timeout in milliseconds (default: 600000) */
   timeoutMs?: number
+  /** Maximum characters in output. Truncated at clean boundary if exceeded. Default: 60000 (~15K tokens) */
+  maxOutputChars?: number
 }
 
 export interface KimiResult {
@@ -73,6 +75,21 @@ function parseKimiOutput(raw: string): { text: string; thinking?: string } {
   return { text: raw.trim() || '(empty response from Kimi)' }
 }
 
+/**
+ * Truncate text at a clean markdown boundary (section header or paragraph break)
+ * to avoid cutting mid-sentence. Appends a notice directing to kimi_resume.
+ */
+function truncateAtBoundary(text: string, maxChars: number): string {
+  const slice = text.slice(0, maxChars)
+  const lastHeader = slice.lastIndexOf('\n## ')
+  const lastParagraph = slice.lastIndexOf('\n\n')
+  const cutPoint = Math.max(lastHeader, lastParagraph, Math.floor(maxChars * 0.8))
+
+  return slice.slice(0, cutPoint) +
+    `\n\n---\n⚠️ **Output truncated** (${text.length.toLocaleString()} chars exceeded ${maxChars.toLocaleString()} char budget). ` +
+    `Use \`kimi_resume\` with the same session to ask follow-up questions about specific sections.`
+}
+
 export function runKimi(config: KimiRunConfig): Promise<KimiResult> {
   const { prompt, workDir, sessionId, thinking, timeoutMs = 300_000 } = config
 
@@ -129,6 +146,15 @@ export function runKimi(config: KimiRunConfig): Promise<KimiResult> {
       }
 
       const parsed = parseKimiOutput(stdout)
+      const maxChars = config.maxOutputChars ?? 60_000
+
+      if (parsed.text.length > maxChars) {
+        parsed.text = truncateAtBoundary(parsed.text, maxChars)
+      }
+      if (parsed.thinking && parsed.thinking.length > maxChars) {
+        parsed.thinking = parsed.thinking.slice(0, Math.floor(maxChars / 2)) + '\n[THINKING TRUNCATED]'
+      }
+
       resolve({ ok: true, ...parsed })
     })
 

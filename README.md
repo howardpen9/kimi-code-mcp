@@ -166,6 +166,49 @@ Each review session can be **resumed** (`kimi_resume`) — Kimi retains up to 25
 | `kimi_list_sessions` | List existing Kimi sessions with metadata | instant |
 | `kimi_resume` | Resume a previous session (up to 256K token context) | 10 min |
 
+### Output Control Parameters
+
+`kimi_analyze` and `kimi_resume` support these parameters to control output size:
+
+| Parameter | Values | Default | Effect |
+|-----------|--------|---------|--------|
+| `detail_level` | `summary` / `normal` / `detailed` | `normal` | Controls prompt-side verbosity instructions |
+| `max_output_tokens` | number | `15000` | Hard ceiling — output truncated at clean boundary if exceeded |
+| `include_thinking` | boolean | `false` | Include Kimi's internal reasoning chain (10-30K extra tokens) |
+
+`kimi_query` also supports `max_output_tokens` and `include_thinking`.
+
+## Token Economics
+
+> [!NOTE]
+> The savings come from **compression ratio**, not from free reading. Kimi's subscription cost still applies, but the key benefit is reducing expensive Claude Code token consumption.
+
+```
+                    Without kimi-code-mcp        With kimi-code-mcp (normal)
+                    ─────────────────────        ───────────────────────────
+Raw source:         50 files × ~4K = 200K        Kimi reads (subscription cost)
+Claude reads:       200K tokens                  5-15K token report
+Claude token cost:  $$$                          $
+```
+
+**Compression ratio by `detail_level`:**
+
+| Level | Compression | Output Size | Best For |
+|-------|------------|-------------|----------|
+| `summary` | 40-100x | ~2-5K tokens | Quick orientation, file inventory |
+| `normal` | 15-40x | ~5-15K tokens | Architecture review, dependency mapping |
+| `detailed` | 5-15x | ~15-40K tokens | Security audit with code snippets |
+
+**When savings happen:**
+- Large codebases (50+ files) — architecture understanding, cross-file scanning
+- Security audits, dead code detection, API consistency checks
+- Pre-review before targeted edits (scan first → edit specific files)
+
+**When to skip and let Claude read directly:**
+- Small codebases (<10 files) — direct reading is faster
+- Single-file modifications — Claude's built-in file reading is sufficient
+- When you need every line of code — `detailed` output approaches raw reading cost
+
 ## How It Works
 
 ```
