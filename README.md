@@ -1,10 +1,10 @@
 # kimi-code-mcp
 
-MCP server that connects [Kimi Code](https://www.kimi.com/code) (K2.5, 256K context) with [Claude Code](https://docs.anthropic.com/en/docs/claude-code) — letting Claude orchestrate while Kimi handles the heavy reading.
-
-**[中文說明](#中文說明)**
+English | **[中文說明](README_zh.md)**
 
 ---
+
+MCP server that connects [Kimi Code](https://www.kimi.com/code) (K2.5, 256K context) with [Claude Code](https://docs.anthropic.com/en/docs/claude-code) — letting Claude orchestrate while Kimi handles the heavy reading.
 
 ## Why This Exists
 
@@ -56,6 +56,44 @@ Kimi Code is powered by K2.5 — a model designed for deep code comprehension. T
 3. **Two perspectives** — different models catch different things. What one misses, the other finds.
 
 This isn't just delegation — it's **AI pair review**. Two models with different strengths auditing the same code from different angles.
+
+## Use Kimi as a Code Reviewer
+
+Beyond ad-hoc analysis, you can use Kimi Code as a **dedicated code reviewer** in your workflow:
+
+### PR Review Workflow
+
+```
+┌──────────────┐   diff    ┌──────────────┐  structured  ┌──────────────┐
+│   Your PR    │ ────────► │  Kimi Code   │  findings    │  Claude Code │
+│  (changes)   │           │  (reviewer)  │ ────────────►│  (decision)  │
+└──────────────┘           └──────────────┘              └──────────────┘
+```
+
+Ask Claude to delegate the review:
+> "Use kimi_analyze to review the changes in this PR — focus on security, correctness, and edge cases"
+
+Kimi reads the full context (not just the diff, but surrounding code too), then Claude synthesizes the findings into actionable review comments.
+
+### Continuous Audit Pattern
+
+For ongoing projects, establish a review rhythm:
+
+1. **Before merging** — Kimi scans the diff + affected modules for regressions
+2. **Weekly audit** — Kimi does a full codebase sweep for accumulated tech debt
+3. **Pre-release** — Kimi performs a security-focused audit of the entire codebase
+
+Each review session can be **resumed** (`kimi_resume`) — Kimi retains up to 256K tokens of context from previous sessions, so it builds understanding over time.
+
+### What Kimi Reviews Well
+
+| Review Type | Why Kimi Excels |
+|-------------|----------------|
+| Security audit | 256K context sees full attack surface, not just isolated files |
+| Dead code detection | Can trace imports/exports across entire codebase |
+| API consistency | Compares patterns across all endpoints simultaneously |
+| Dependency analysis | Maps full dependency graph in one pass |
+| Architecture review | Sees the forest and the trees at the same time |
 
 ## Features
 
@@ -124,22 +162,17 @@ In Claude Code, run `/mcp` to check the server is connected. You should see `kim
 **Delegate bulk analysis (save tokens):**
 > "Use kimi_analyze to review this codebase's architecture, then tell me what needs refactoring"
 
-Claude sends the task to Kimi, gets back a full report, then summarizes and acts on it — without reading hundreds of files itself.
-
 **Mutual security audit:**
 > "Have Kimi scan the codebase for security vulnerabilities, then review its findings and add anything it missed"
 
-Two models, two perspectives. Kimi does the exhaustive scan (256K context), Claude cross-examines the results.
+**Code review before merge:**
+> "Use kimi_analyze to review the recent changes — check for regressions, security issues, and edge cases"
 
 **Pre-review before refactoring:**
 > "Ask Kimi to map all dependencies of the auth module, then plan the refactoring based on its analysis"
 
-Kimi reads every file to build the dependency graph. Claude uses that map to plan precise changes.
-
 **Resume context-heavy sessions:**
 > "List Kimi sessions for this project, then resume the last one to ask about the auth flow"
-
-Kimi retains up to 256K tokens of context from previous sessions — no need to re-read the codebase.
 
 ## How It Works
 
@@ -169,95 +202,10 @@ src/
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for version history.
+
 ## License
 
 MIT
-
----
-
-# 中文說明
-
-## 簡介
-
-`kimi-code-mcp` 是一個 [MCP](https://modelcontextprotocol.io/) 伺服器，將 [Kimi Code](https://www.kimi.com/code)（K2.5，256K 上下文）與 [Claude Code](https://docs.anthropic.com/en/docs/claude-code) 串接。
-
-## 為什麼需要這個？
-
-Claude Code 很強大，但每次讀檔、掃描 codebase 都會消耗 token。很多工作——預審大型程式碼庫、跨檔案掃描模式、生成審計報告——屬於**確定性高的尾部任務**，不需要 Claude 的完整推理能力。
-
-### 核心概念：Claude Code 當指揮家，Kimi Code 當專業讀者
-
-**節省 Claude Code Token 成本：**
-1. **Claude** 收到你的任務 → 判斷需要理解 codebase
-2. **Claude** 透過 MCP 呼叫 `kimi_analyze` → Kimi 讀取整個程式碼庫（256K 上下文，近零成本）
-3. **Kimi** 回傳結構化分析
-4. **Claude** 根據分析做精準的程式碼修改
-
-結果：Claude 只花 token 在**決策和寫碼**，不浪費在讀檔上。
-
-### 基於 K2.5 的雙向程式碼審計
-
-Kimi Code 搭載 K2.5 模型，專為深度程式碼理解而設計。這讓一個強大的工作流成為可能：
-
-1. **Kimi 預審** — 用 256K 上下文掃描整個 codebase，找出安全問題、反模式、死代碼、架構問題
-2. **Claude 交叉審查** — 審閱 Kimi 的發現，質疑可疑項目，補充自己的洞察
-3. **雙重視角** — 不同模型捕捉不同問題。一個遺漏的，另一個能發現
-
-這不只是委派工作——而是 **AI 結對審查**。兩個不同優勢的模型，從不同角度審計同一份程式碼。
-
-## 功能
-
-| 工具 | 說明 | 超時 |
-|------|------|------|
-| `kimi_analyze` | 深度程式碼分析（架構、審計、重構建議） | 10 分鐘 |
-| `kimi_query` | 快速問答，不需要 codebase 上下文 | 2 分鐘 |
-| `kimi_list_sessions` | 列出現有的 Kimi 分析 session | 即時 |
-| `kimi_resume` | 恢復之前的 session（保留最多 256K token 上下文） | 10 分鐘 |
-
-## 前置需求
-
-1. **Kimi CLI**：`uv tool install kimi-cli`
-2. **登入 Kimi**：`kimi login`
-3. **Node.js** >= 18
-
-## 安裝
-
-```bash
-git clone https://github.com/howardpen9/kimi-code-mcp.git
-cd kimi-code-mcp
-npm install
-npm run build
-```
-
-## 配置 Claude Code
-
-在專案的 `.mcp.json`（或 `~/.claude/mcp.json` 全域設定）加入：
-
-```json
-{
-  "mcpServers": {
-    "kimi-code": {
-      "command": "node",
-      "args": ["/你的路徑/kimi-code-mcp/dist/index.js"]
-    }
-  }
-}
-```
-
-## 使用範例
-
-**委派分析（省 token）：**
-> 「用 kimi_analyze 分析這個 codebase 的架構，告訴我需要重構什麼」
-
-**雙向安全審計：**
-> 「讓 Kimi 掃描 codebase 的安全漏洞，然後審閱它的發現，補充它遺漏的」
-
-**重構前預審：**
-> 「請 Kimi 映射 auth 模組的所有依賴，然後根據分析規劃重構」
-
-**恢復上次分析：**
-> 「列出這個專案的 Kimi sessions，然後恢復上一次的分析繼續問」
-
-## 貢獻
-
-請參閱 [CONTRIBUTING.md](CONTRIBUTING.md)。
