@@ -3,11 +3,17 @@ import * as path from 'path'
 import * as os from 'os'
 import * as fs from 'fs'
 
+/** Configuration for running a Kimi CLI session */
 export interface KimiRunConfig {
+  /** The analysis prompt to send to Kimi */
   prompt: string
+  /** Absolute path to the codebase root directory */
   workDir?: string
+  /** Resume a specific session by ID */
   sessionId?: string
+  /** Enable thinking mode for deeper analysis */
   thinking?: boolean
+  /** Timeout in milliseconds (default: 600000) */
   timeoutMs?: number
 }
 
