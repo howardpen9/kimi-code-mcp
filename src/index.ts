@@ -2,7 +2,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
-import { runKimi, isKimiInstalled } from './kimi-runner.js'
+import { runKimi, isKimiInstalled, getKimiStatus } from './kimi-runner.js'
 import { listSessions } from './session-reader.js'
 import { CacheManager, getGlobalCacheManager } from './cache-manager.js'
 
@@ -316,6 +316,53 @@ server.tool(
 
     const response = buildResponse(result.text, result.thinking, include_thinking ?? false)
     return { content: [{ type: 'text' as const, text: response }] }
+  }
+)
+
+// --- Tool 7: kimi_status ---
+server.tool(
+  'kimi_status',
+  'Check Kimi CLI installation status, version, and authentication. Use this to diagnose issues before running analysis.',
+  {},
+  async () => {
+    const status = await getKimiStatus()
+
+    const lines: string[] = []
+    lines.push(`## Kimi CLI Status`)
+    lines.push(`- **Installed**: ${status.installed ? 'Yes' : 'No'}`)
+    lines.push(`- **Binary**: \`${status.binPath}\``)
+    if (status.version) lines.push(`- **Version**: ${status.version}`)
+    if (status.authenticated !== undefined) {
+      lines.push(`- **Authenticated**: ${status.authenticated ? 'Yes' : 'No'}`)
+    }
+    if (status.error) lines.push(`\n**Action required**: ${status.error}`)
+
+    if (!status.installed) {
+      lines.push(`\n### Installation`)
+      lines.push(`\`\`\`bash`)
+      lines.push(`# Install via uv (recommended)`)
+      lines.push(`uv tool install kimi-cli`)
+      lines.push(``)
+      lines.push(`# Then authenticate`)
+      lines.push(`kimi login`)
+      lines.push(`\`\`\``)
+    }
+
+    // Include cache stats
+    const cacheStats = cacheManager.getStats()
+    lines.push(`\n## Cache Status`)
+    lines.push(`- **Active sessions**: ${cacheStats.totalEntries}`)
+    lines.push(`- **Cache hits**: ${cacheStats.totalHits}`)
+    lines.push(`- **Cache misses**: ${cacheStats.totalMisses}`)
+    if (cacheStats.totalHits + cacheStats.totalMisses > 0) {
+      const hitRate = ((cacheStats.totalHits / (cacheStats.totalHits + cacheStats.totalMisses)) * 100).toFixed(1)
+      lines.push(`- **Hit rate**: ${hitRate}%`)
+    }
+
+    return {
+      content: [{ type: 'text' as const, text: lines.join('\n') }],
+      isError: !status.installed,
+    }
   }
 )
 

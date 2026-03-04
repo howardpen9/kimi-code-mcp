@@ -34,13 +34,61 @@ export function isKimiInstalled(): boolean {
   return fs.existsSync(KIMI_BIN)
 }
 
+export interface KimiStatus {
+  installed: boolean
+  binPath: string
+  version?: string
+  authenticated?: boolean
+  error?: string
+}
+
+export async function getKimiStatus(): Promise<KimiStatus> {
+  const status: KimiStatus = { installed: false, binPath: KIMI_BIN }
+
+  if (!fs.existsSync(KIMI_BIN)) {
+    status.error = 'Kimi CLI not found. Install via: uv tool install kimi-cli'
+    return status
+  }
+  status.installed = true
+
+  // Check version
+  try {
+    const { execSync } = await import('child_process')
+    const env = { ...process.env }
+    const localBin = path.join(os.homedir(), '.local/bin')
+    if (!env.PATH?.includes(localBin)) {
+      env.PATH = `${localBin}:${env.PATH || ''}`
+    }
+    status.version = execSync(`${KIMI_BIN} --version`, { encoding: 'utf-8', timeout: 5000, env }).trim()
+  } catch {
+    status.version = '(unable to detect)'
+  }
+
+  // Check authentication by looking for config
+  try {
+    const kimiConfigPath = path.join(os.homedir(), '.kimi', 'kimi.json')
+    if (fs.existsSync(kimiConfigPath)) {
+      const raw = fs.readFileSync(kimiConfigPath, 'utf-8')
+      const config = JSON.parse(raw)
+      status.authenticated = !!(config.access_token || config.auth_token || config.api_key)
+    } else {
+      status.authenticated = false
+      status.error = 'Not authenticated. Run: kimi login'
+    }
+  } catch {
+    status.authenticated = undefined
+  }
+
+  return status
+}
+
 /**
  * Extract session ID from Kimi's stderr output.
  * Kimi outputs session info to stderr in formats like:
  * - "Session ID: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
  * - "session_id: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
  */
-function extractSessionId(stderr: string): string | undefined {
+export function extractSessionId(stderr: string): string | undefined {
   // Match various session ID formats
   const patterns = [
     /Session ID:\s*([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i,
@@ -61,7 +109,7 @@ function extractSessionId(stderr: string): string | undefined {
  * The output is one JSON line: {"role":"assistant","content":...}
  * content can be a string or an array of {type, text/think} objects.
  */
-function parseKimiOutput(raw: string): { text: string; thinking?: string } {
+export function parseKimiOutput(raw: string): { text: string; thinking?: string } {
   // Find the last valid JSON line (skip StatusUpdate/TurnEnd lines)
   const lines = raw.trim().split('\n').filter(Boolean)
 
@@ -103,7 +151,7 @@ function parseKimiOutput(raw: string): { text: string; thinking?: string } {
  * Truncate text at a clean markdown boundary (section header or paragraph break)
  * to avoid cutting mid-sentence. Appends a notice directing to kimi_resume.
  */
-function truncateAtBoundary(text: string, maxChars: number): string {
+export function truncateAtBoundary(text: string, maxChars: number): string {
   const slice = text.slice(0, maxChars)
   const lastHeader = slice.lastIndexOf('\n## ')
   const lastParagraph = slice.lastIndexOf('\n\n')

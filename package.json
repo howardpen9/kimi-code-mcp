@@ -1,13 +1,49 @@
 {
   "name": "kimi-code-mcp",
   "version": "0.3.0",
+  "description": "MCP server bridging Kimi Code (256K context) with Claude Code for cost-efficient codebase analysis",
   "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "kimi-code-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "README_zh.md",
+    "LICENSE"
+  ],
   "scripts": {
     "dev": "tsx src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run test && npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "claude-code",
+    "kimi",
+    "kimi-code",
+    "llm",
+    "ai",
+    "code-analysis",
+    "model-context-protocol"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/howardpen9/kimi-code-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/howardpen9/kimi-code-mcp/issues"
+  },
+  "homepage": "https://github.com/howardpen9/kimi-code-mcp#readme",
+  "author": "howardpen9",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.26.0",
