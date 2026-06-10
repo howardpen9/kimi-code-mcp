@@ -4,6 +4,57 @@ English | **[中文說明](README_zh.md)**
 
 ---
 
+**Delegate codebase analysis from Claude to Kimi K2.5 (256K) — cut token cost ~90%.**
+
+| Task                         | Claude only | Claude + kimi-code-mcp | Savings |
+|------------------------------|-------------|------------------------|---------|
+| Analyze 200-file monorepo    | ~250K tok   | ~25K tok               | 90%     |
+| Summarize 50-page RFC PDF    | ~60K tok    | ~6K tok                | 90%     |
+| Cross-reference 100 commits  | ~80K tok    | ~8K tok                | 90%     |
+
+<sub>*Illustrative — actual savings depend on task.</sub>
+
+## Quick start
+
+```bash
+# 1. Install Kimi CLI and log in
+curl -L code.kimi.com/install.sh | bash
+kimi login
+
+# 2. Install via npm
+npm install -g kimi-mcp-server
+```
+
+Add to `.mcp.json` (project-level or `~/.claude/mcp.json` for global):
+
+```json
+{
+  "mcpServers": {
+    "kimi-code": {
+      "command": "npx",
+      "args": ["-y", "kimi-mcp-server"]
+    }
+  }
+}
+```
+
+Run `/mcp` in Claude Code to verify — you should see `kimi-code` with 7 tools.
+
+## How it works
+
+1. **Claude calls the `kimi_analyze` tool** when a task needs bulk codebase reading.
+2. **MCP routes the request to Kimi K2.5** (256K context) — Kimi reads the entire codebase in one pass.
+3. **The result is piped back as a structured response** — Claude acts on it with precise, targeted edits.
+
+```
+┌──────────────┐  stdio/MCP   ┌──────────────┐  subprocess   ┌──────────────┐
+│  Claude Code │ ◄──────────► │ kimi-code-mcp│ ────────────► │ Kimi CLI     │
+│  (conductor) │              │ (MCP server) │               │ (K2.5, 256K) │
+└──────────────┘              └──────────────┘               └──────────────┘
+```
+
+---
+
 MCP server that connects [Kimi Code](https://www.kimi.com/code) (K2.5, 256K context) with [Claude Code](https://docs.anthropic.com/en/docs/claude-code) — letting Claude orchestrate while Kimi handles the heavy reading.
 
 <div align="center">
@@ -37,31 +88,9 @@ Key specs:
 >
 > Annual billing saves up to $480. All plans include [Kimi membership benefits](https://www.kimi.com/code/en).
 
-## Quick Start
+## Install from source
 
-```bash
-# 1. Install Kimi CLI and log in
-curl -L code.kimi.com/install.sh | bash
-kimi login
-
-# 2. Install via npm
-npm install -g kimi-mcp-server
-```
-
-Add to `.mcp.json` (project-level or `~/.claude/mcp.json` for global):
-
-```json
-{
-  "mcpServers": {
-    "kimi-code": {
-      "command": "npx",
-      "args": ["-y", "kimi-mcp-server"]
-    }
-  }
-}
-```
-
-Or build from source:
+If you prefer to build locally instead of using the npm package:
 
 ```bash
 git clone https://github.com/howardpen9/kimi-code-mcp.git
@@ -78,8 +107,6 @@ cd kimi-code-mcp && npm install && npm run build
   }
 }
 ```
-
-Run `/mcp` in Claude Code to verify — you should see `kimi-code` with 7 tools.
 
 ## Kimi Code API Setup
 
@@ -346,14 +373,9 @@ Claude token cost:  $$$                          $
 - Single-file modifications — Claude's built-in file reading is sufficient
 - When you need every line of code — `detailed` output approaches raw reading cost
 
-## How It Works
+## Implementation details
 
-```
-┌──────────────┐  stdio/MCP   ┌──────────────┐  subprocess   ┌──────────────┐
-│  Claude Code │ ◄──────────► │ kimi-code-mcp│ ────────────► │ Kimi CLI     │
-│  (conductor) │              │ (MCP server) │               │ (K2.5, 256K) │
-└──────────────┘              └──────────────┘               └──────────────┘
-```
+Under the hood:
 
 1. Claude Code calls an MCP tool (e.g., `kimi_analyze`)
 2. This server spawns the `kimi` CLI with the prompt and codebase path
