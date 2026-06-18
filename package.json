@@ -1,6 +1,6 @@
 {
   "name": "kimi-mcp-server",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "MCP server for Claude Code × Kimi Code (kimi-for-coding, 256K context) — delegate bulk codebase analysis to Kimi, save 90% on token costs",
   "type": "module",
   "main": "dist/index.js",

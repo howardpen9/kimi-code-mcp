@@ -70,7 +70,10 @@ cd kimi-code-mcp && npm install && npm run build
 }
 ```
 
-Run `/mcp` in Claude Code to verify — you should see `kimi-code` with 7 tools.
+Run `/mcp` in Claude Code to verify — you should see `kimi-code` with 8 tools.
+
+> [!TIP]
+> **No CLI? Use API mode.** `kimi_verify` (and `kimi_query` as a fallback) call the Kimi Code API directly — no Python CLI install required. Just provide an API key via `$KIMICODE_API_KEY` or `~/.kimi/config.toml` (see [Kimi Code API Setup](#kimi-code-api-setup)). This makes Kimi usable as an **external third-party verification agent** that any Claude Code session can call to cross-check its own work.
 
 ## Kimi Code API Setup
 
@@ -286,7 +289,8 @@ Each review session can be **resumed** (`kimi_resume`) — Kimi retains up to 25
 | Tool | Description | Timeout |
 |------|-------------|---------|
 | `kimi_analyze` | Deep codebase analysis (architecture, audit, refactoring) | 10 min |
-| `kimi_query` | Quick programming questions, no codebase context | 2 min |
+| `kimi_query` | Quick programming questions, no codebase context (API fallback when CLI absent) | 2 min |
+| `kimi_verify` | **API mode** — independent third-party verification of code/diffs/claims; no CLI required, context-driven | 5 min |
 | `kimi_list_sessions` | List existing Kimi sessions with metadata | instant |
 | `kimi_resume` | Resume a previous session (up to 256K token context) | 10 min |
 | `kimi_status` | Check CLI installation, version, and authentication status | instant |

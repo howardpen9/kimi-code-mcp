@@ -5,10 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.0] - 2026-06-18
 
 ### Added
 
+- **API mode (`src/kimi-api.ts`)** — call the Kimi Code API directly, no Python CLI required. Reads the key from `$KIMICODE_API_KEY` or `~/.kimi/config.toml` (section-aware, prefers the coding provider, supports `${VAR}` interpolation) and sends the `KimiCLI/1.0` User-Agent the endpoint requires
+- **`kimi_verify` tool** — Kimi as an independent third-party verifier. Cross-check a fix, diff, claim, or plan from a second model. Context-driven: callers must pass self-contained material since Kimi has no access to the session/repo. API-backed, so it works without the CLI
+- **`kimi_query` API fallback** — uses the direct API when the CLI isn't installed
 - **`KIMI_SHARE_DIR` env var support** in `session-reader.ts` and `kimi-runner.ts` — overrides the default `~/.kimi` data root, matching the same env var the upstream Kimi CLI recognizes. Default behavior unchanged
 
 ### Documentation

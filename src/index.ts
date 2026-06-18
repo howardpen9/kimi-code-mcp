@@ -3,6 +3,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import { runKimi, isKimiInstalled, getKimiStatus } from './kimi-runner.js'
+import { runKimiApi, isApiConfigured } from './kimi-api.js'
 import { listSessions } from './session-reader.js'
 import { CacheManager, getGlobalCacheManager } from './cache-manager.js'
 
@@ -11,7 +12,7 @@ const cacheManager = getGlobalCacheManager({ debug: process.env.KIMI_CACHE_DEBUG
 
 const server = new McpServer({
   name: 'kimi-code',
-  version: '0.3.0',
+  version: '0.4.0',
 })
 
 // --- Output format instructions per detail level ---
@@ -168,18 +169,61 @@ server.tool(
       .describe('Include Kimi internal reasoning. Default: false.'),
   },
   async ({ prompt, thinking, max_output_tokens, include_thinking }) => {
-    if (!isKimiInstalled()) {
-      return { content: [{ type: 'text' as const, text: 'Error: kimi CLI not installed.' }], isError: true }
-    }
-
     const maxChars = max_output_tokens ? max_output_tokens * 4 : DEFAULT_MAX_OUTPUT_CHARS
 
-    const result = await runKimi({
-      prompt,
-      thinking: thinking ?? false,
-      timeoutMs: 120_000,
-      maxOutputChars: maxChars,
-    })
+    // Prefer the local CLI when installed; otherwise fall back to the direct API.
+    let result
+    if (isKimiInstalled()) {
+      result = await runKimi({
+        prompt,
+        thinking: thinking ?? false,
+        timeoutMs: 120_000,
+        maxOutputChars: maxChars,
+      })
+    } else if (isApiConfigured()) {
+      result = await runKimiApi({ prompt, timeoutMs: 120_000, maxOutputChars: maxChars })
+    } else {
+      return { content: [{ type: 'text' as const, text: 'Error: kimi CLI not installed and no Kimi Code API key configured (set $KIMICODE_API_KEY or ~/.kimi/config.toml).' }], isError: true }
+    }
+
+    if (!result.ok) {
+      return { content: [{ type: 'text' as const, text: `Error: ${result.error}` }], isError: true }
+    }
+
+    const response = buildResponse(result.text, result.thinking, include_thinking ?? false)
+    return { content: [{ type: 'text' as const, text: response }] }
+  }
+)
+
+// --- Tool 2b: kimi_verify (direct API, no CLI required) ---
+server.tool(
+  'kimi_verify',
+  `Get an INDEPENDENT second opinion from Kimi Code (kimi-for-coding, 256K context) acting as an external third-party verifier. Calls the Kimi Code API directly — no CLI install required, just an API key (env KIMICODE_API_KEY or ~/.kimi/config.toml).
+
+USE THIS to cross-check your own work: confirm a fix is correct, hunt for bugs / edge cases / security issues in a diff, sanity-check a claim or plan, or get a dissenting view before you commit. Different model, independent judgment.
+
+CRITICAL — pass full context: Kimi sees ONLY the 'context' string. It has NO access to this session, the repository, prior messages, or any tools. Paste the ACTUAL code/diff/claim AND the surrounding context it needs (the goal, constraints, assumptions, relevant signatures). Vague or partial context produces vague, useless verification.`,
+  {
+    context: z.string().describe('Self-contained material for Kimi to examine: the actual code / diff / claim / plan PLUS the context needed to judge it (intent, constraints, assumptions, relevant signatures). Kimi sees nothing but this.'),
+    question: z.string().optional().describe('What to verify or focus on, e.g. "is this SQL-injection safe?" or "does this handle empty input and concurrency?". Default: a general independent correctness review.'),
+    role: z.string().optional().describe('Override the reviewer persona (system instruction). Default: a meticulous, independent senior engineer with no stake in the code.'),
+    max_output_tokens: z.number().optional().describe('Max answer tokens (~4 chars/token). Default: 15000.'),
+    include_thinking: z.boolean().optional().describe('Include Kimi internal reasoning in the output. Default: false.'),
+  },
+  async ({ context, question, role, max_output_tokens, include_thinking }) => {
+    if (!isApiConfigured()) {
+      return { content: [{ type: 'text' as const, text: 'Error: no Kimi Code API key found. Set $KIMICODE_API_KEY or add api_key to ~/.kimi/config.toml.' }], isError: true }
+    }
+
+    const focus = question?.trim() ||
+      'Independently verify correctness. Surface bugs, edge cases, security issues, and concrete improvements.'
+    const system = role?.trim() ||
+      'You are a meticulous, independent senior engineer providing third-party verification. You did not write this code and have no stake in it. Be skeptical and specific: confirm what is correct, call out what is wrong or risky, and show corrected code where it helps. If something cannot be determined from the given context, say so explicitly instead of guessing.'
+
+    const prompt = `## Your task (independent verifier)\n${focus}\n\n## Material to verify\n${context}\n${AI_CONSUMER_NOTICE}`
+    const maxChars = max_output_tokens ? max_output_tokens * 4 : DEFAULT_MAX_OUTPUT_CHARS
+
+    const result = await runKimiApi({ prompt, system, timeoutMs: 300_000, maxOutputChars: maxChars })
 
     if (!result.ok) {
       return { content: [{ type: 'text' as const, text: `Error: ${result.error}` }], isError: true }
