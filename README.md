@@ -4,20 +4,20 @@ English | **[中文說明](README_zh.md)**
 
 ---
 
-MCP server that connects [Kimi Code](https://www.kimi.com/code) (K2.5, 256K context) with [Claude Code](https://docs.anthropic.com/en/docs/claude-code) — letting Claude orchestrate while Kimi handles the heavy reading.
+MCP server that connects [Kimi Code](https://www.kimi.com/code) (model `kimi-for-coding`, 256K context, auto-upgraded) with [Claude Code](https://docs.anthropic.com/en/docs/claude-code) — letting Claude orchestrate while Kimi handles the heavy reading.
 
 <div align="center">
-  <img src="assets/llm-cost-vs-intelligence.png" alt="LLM Cost vs Intelligence — Kimi K2.5 delivers frontier-level intelligence at a fraction of the cost" width="720" />
+  <img src="assets/llm-cost-vs-intelligence.png" alt="LLM Cost vs Intelligence — Kimi Code delivers frontier-level intelligence at a fraction of the cost" width="720" />
   <br />
-  <sub>Kimi K2.5 sits on the efficiency frontier — near-Claude intelligence at 10x lower cost. <a href="https://www.kimi.com/code">kimi.com/code</a></sub>
+  <sub>Kimi Code sits on the efficiency frontier — near-Claude intelligence at 10x lower cost. <a href="https://www.kimi.com/code">kimi.com/code</a></sub>
 </div>
 
 > [!TIP]
-> **Stop paying Claude to read files.** Kimi K2.5 delivers frontier-class code intelligence at a fraction of the cost (see chart above). Delegate bulk codebase scanning to Kimi (256K context, near-zero cost) and let Claude focus on what it does best — reasoning, decisions, and precise code edits. One `kimi_analyze` call can replace 50+ file reads.
+> **Stop paying Claude to read files.** Kimi Code delivers frontier-class code intelligence at a fraction of the cost (see chart above). Delegate bulk codebase scanning to Kimi (256K context, near-zero cost) and let Claude focus on what it does best — reasoning, decisions, and precise code edits. One `kimi_analyze` call can replace 50+ file reads.
 
 ## What is Kimi Code?
 
-[**Kimi Code**](https://www.kimi.com/code/en) is an AI code agent by Moonshot AI, powered by the **Kimi K2.5** model (1T MoE, 256K context). It works across Terminal, IDE, and CLI — writing, debugging, refactoring, and analyzing code autonomously.
+[**Kimi Code**](https://www.kimi.com/code/en) is an AI code agent by Moonshot AI. The model ID `kimi-for-coding` (1T MoE, 256K context) automatically receives backend upgrades — no version pinning required. It works across Terminal, IDE, and CLI — writing, debugging, refactoring, and analyzing code autonomously.
 
 Key specs:
 - **256K token context** — reads entire codebases in one pass
@@ -26,16 +26,7 @@ Key specs:
 - **Install**: `curl -L code.kimi.com/install.sh | bash`
 
 > [!WARNING]
-> **Kimi Code membership required.** This MCP server calls the Kimi CLI under the hood, which requires an active [Kimi Code plan](https://www.kimi.com/code/en). Make sure you have a valid subscription and have run `kimi login` before use.
->
-> | Plan | Price | Notes |
-> |------|-------|-------|
-> | **Moderato** | **$0** (7-day free trial) | Then $19/mo. Good for trying it out |
-> | **Allegretto** | $39/mo | Recommended — higher weekly quota + concurrency |
-> | **Allegro** | $99/mo | For daily, heavy-duty development |
-> | **Vivace** | $199/mo | Max quota for large codebases |
->
-> Annual billing saves up to $480. All plans include [Kimi membership benefits](https://www.kimi.com/code/en).
+> **Kimi Code membership required.** This MCP server calls the Kimi CLI under the hood, which requires an active [Kimi Code plan](https://www.kimi.com/code/en). Make sure you have a valid subscription and have run `kimi login` before use. See [kimi.com/code](https://www.kimi.com/code/en) for the latest pricing tiers and quotas.
 
 ## Quick Start
 
@@ -236,9 +227,8 @@ Claude Code is powerful but expensive. Every file it reads costs tokens. Meanwhi
                                  ▼              ▼
                           ┌──────────┐   ┌──────────────┐
                           │ your     │   │  Kimi Code   │
-                          │ codebase │   │  (K2.5)      │
-                          └──────────┘   │  - 256K ctx  │
-                                         │  - reads all │
+                          │ codebase │   │  - 256K ctx  │
+                          └──────────┘   │  - reads all │
                                          │  - reports   │
                                          └──────────────┘
 ```
@@ -250,9 +240,9 @@ Claude Code is powerful but expensive. Every file it reads costs tokens. Meanwhi
 
 **Result: Claude only spends tokens on decision-making and code writing, not on reading files.**
 
-### Mutual Code Review with K2.5
+### Mutual Code Review with Kimi Code
 
-Kimi Code is powered by K2.5 — a 1T MoE model designed for deep code comprehension. This enables **AI pair review**:
+`kimi-for-coding` is a 1T MoE model designed for deep code comprehension. This enables **AI pair review**:
 
 1. **Kimi pre-reviews** — 256K context means it sees the entire codebase at once: security issues, anti-patterns, dead code, architectural problems
 2. **Claude cross-examines** — reviews Kimi's findings, challenges questionable items, adds its own insights
@@ -349,10 +339,11 @@ Claude token cost:  $$$                          $
 ## How It Works
 
 ```
-┌──────────────┐  stdio/MCP   ┌──────────────┐  subprocess   ┌──────────────┐
-│  Claude Code │ ◄──────────► │ kimi-code-mcp│ ────────────► │ Kimi CLI     │
-│  (conductor) │              │ (MCP server) │               │ (K2.5, 256K) │
-└──────────────┘              └──────────────┘               └──────────────┘
+┌──────────────┐  stdio/MCP   ┌──────────────┐  subprocess   ┌──────────────────┐
+│  Claude Code │ ◄──────────► │ kimi-code-mcp│ ────────────► │ Kimi CLI         │
+│  (conductor) │              │ (MCP server) │               │ (kimi-for-coding,│
+│              │              │              │               │  256K context)   │
+└──────────────┘              └──────────────┘               └──────────────────┘
 ```
 
 1. Claude Code calls an MCP tool (e.g., `kimi_analyze`)

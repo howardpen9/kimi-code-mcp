@@ -14,8 +14,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: howardpen9/kimi-code-reviewer@v1
+      - uses: howardpen9/kimi-code-reviewer@v2
         with:
-          kimi_api_key: ${{ secrets.MOONSHOT_API_KEY }}
+          kimi_api_key: ${{ secrets.KIMICODE_API_KEY }}
+          base_url: https://api.kimi.com/coding/v1
           language: zh-TW
           fail_on: never

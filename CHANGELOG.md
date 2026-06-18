@@ -7,8 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`KIMI_SHARE_DIR` env var support** in `session-reader.ts` and `kimi-runner.ts` — overrides the default `~/.kimi` data root, matching the same env var the upstream Kimi CLI recognizes. Default behavior unchanged
+
 ### Documentation
 
+- **Brand sync with current Kimi Code docs (2026-06)**: replaced "Kimi K2.5" references in `README.md`, `README_zh.md`, and `package.json` with `kimi-for-coding` (the official model ID, auto-upgraded on the backend)
+- **Pricing table removed**: replaced the hardcoded Moderato/Allegretto/Allegro/Vivace table with a link to [kimi.com/code](https://www.kimi.com/code/en); subscription tiers and quotas change too often to maintain in README
 - Added **CLI Invocation Reference** section to both READMEs clarifying the exact flags the MCP server uses (`--print -p`) and explicitly noting that `kimi analyze` subcommand does not exist
 
 ## [0.3.0] - 2026-03-04

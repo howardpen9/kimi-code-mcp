@@ -3,7 +3,7 @@ import * as path from 'path'
 import * as os from 'os'
 import * as crypto from 'crypto'
 
-const KIMI_DIR = path.join(os.homedir(), '.kimi')
+const KIMI_DIR = process.env.KIMI_SHARE_DIR || path.join(os.homedir(), '.kimi')
 const SESSIONS_DIR = path.join(KIMI_DIR, 'sessions')
 const KIMI_JSON = path.join(KIMI_DIR, 'kimi.json')
 

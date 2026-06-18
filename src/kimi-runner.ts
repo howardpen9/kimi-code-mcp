@@ -66,9 +66,10 @@ export async function getKimiStatus(): Promise<KimiStatus> {
 
   // Check authentication by looking for credentials
   try {
-    // Kimi CLI v1.12+ stores OAuth credentials in ~/.kimi/credentials/kimi-code.json
-    const credentialsPath = path.join(os.homedir(), '.kimi', 'credentials', 'kimi-code.json')
-    const legacyConfigPath = path.join(os.homedir(), '.kimi', 'kimi.json')
+    const kimiDir = process.env.KIMI_SHARE_DIR || path.join(os.homedir(), '.kimi')
+    // Kimi CLI v1.12+ stores OAuth credentials in <kimiDir>/credentials/kimi-code.json
+    const credentialsPath = path.join(kimiDir, 'credentials', 'kimi-code.json')
+    const legacyConfigPath = path.join(kimiDir, 'kimi.json')
 
     if (fs.existsSync(credentialsPath)) {
       const raw = fs.readFileSync(credentialsPath, 'utf-8')
