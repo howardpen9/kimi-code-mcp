@@ -41,7 +41,7 @@ Add to `.mcp.json` (project-level or `~/.claude/mcp.json` for global):
 Run `/mcp` in Claude Code to verify — you should see `kimi-code` with 8 tools.
 
 > [!TIP]
-> **No CLI? Use API mode.** `kimi_verify` (and `kimi_query` as a fallback) call the Kimi Code API directly — no Python CLI install required. Just provide an API key via `$KIMICODE_API_KEY` or `~/.kimi/config.toml` (see [Kimi Code API Setup](#kimi-code-api-setup)). This makes Kimi usable as an **external third-party verification agent** that any Claude Code session can call to cross-check its own work.
+> **You don't need the CLI for the common case.** `kimi_query` and `kimi_verify` call the Kimi Code API directly — no Python CLI install or `kimi login` required. Just provide an API key via `$KIMICODE_API_KEY` or `~/.kimi/config.toml` (see [Kimi Code API Setup](#kimi-code-api-setup)). Only the codebase-reading tools (`kimi_analyze`, `kimi_resume`) need the CLI. See [Two backends: API vs CLI](#two-backends-api-vs-cli) for the full split.
 
 ## How it works
 
@@ -55,6 +55,40 @@ Run `/mcp` in Claude Code to verify — you should see `kimi-code` with 8 tools.
 │  (conductor) │              │ (MCP server) │               │ (256K ctx)   │
 └──────────────┘              └──────────────┘               └──────────────┘
 ```
+
+## Two backends: API vs CLI
+
+The server reaches Kimi two different ways, and **each tool uses the one that fits its job**. Knowing which is which tells you what you need to set up.
+
+| Backend | How it talks to Kimi | What it needs | Sees your codebase? |
+|---------|----------------------|---------------|---------------------|
+| **Direct API** | HTTPS to `api.kimi.com/coding/v1` | An API key only (`$KIMICODE_API_KEY` or `~/.kimi/config.toml`) | ❌ No — you paste in the context |
+| **Local CLI** | Spawns the `kimi` binary as a subprocess | CLI installed **and** `kimi login` done | ✅ Yes — reads files from disk |
+
+| Tool | Backend | Why |
+|------|---------|-----|
+| `kimi_query` | **API** (CLI only if no key configured) | Contextless Q&A — no codebase needed, so the API is simpler and has no login dependency |
+| `kimi_verify` | **API** | You pass the code/diff/claim inline; Kimi judges it as an independent third party |
+| `kimi_analyze` | **CLI** | Must read your whole codebase (256K ctx) from disk |
+| `kimi_resume` | **CLI** | Continues a stateful CLI session that holds prior codebase context |
+| `kimi_list_sessions`, `kimi_cache_*`, `kimi_status` | local | Read local session/cache metadata |
+
+> [!IMPORTANT]
+> **Most users only need the API key.** If you just want a second opinion / verification (`kimi_query`, `kimi_verify`), set the API key and you're done — skip the CLI entirely. Install + `kimi login` only when you want Kimi to read your codebase via `kimi_analyze` / `kimi_resume`.
+
+Run **`kimi_status`** any time to see which backends are live — it reports the API-configured state and the CLI install/auth state separately.
+
+## Guidelines for agents
+
+If you are an AI agent (Claude Code, a subagent, etc.) deciding when to call these tools:
+
+- **Cross-check your own work before committing → `kimi_verify`.** Paste the actual diff/code/claim **plus the surrounding context** (goal, constraints, signatures). Kimi sees *only* the `context` string — no repo, no session history. Vague context → useless review.
+- **Quick model-agnostic programming question → `kimi_query`.** No codebase needed. Returns a different model's opinion.
+- **Need to understand a large/unfamiliar codebase → `kimi_analyze`** with `work_dir`. Prefer this over reading 50 files yourself; it's ~10× cheaper in Claude tokens. Requires the CLI to be installed and logged in.
+- **Drill deeper after an analyze → `kimi_resume`** with the returned `session_id` (retains up to 256K tokens of prior context).
+- **Don't know why a Kimi call failed → `kimi_status` first.** "Not authenticated" on the CLI does **not** affect `kimi_query`/`kimi_verify` (those use the API).
+- **Keep outputs lean.** Default `detail_level: summary` for orientation; raise to `normal`/`detailed` only when you need code snippets. Bigger output = more Claude tokens, defeating the purpose.
+- **Skip Kimi for small/single-file work** — Claude reading directly is faster under ~10 files.
 
 ---
 
@@ -80,7 +114,7 @@ Key specs:
 - **Install**: `curl -L code.kimi.com/install.sh | bash`
 
 > [!WARNING]
-> **Kimi Code membership required.** This MCP server calls the Kimi CLI under the hood, which requires an active [Kimi Code plan](https://www.kimi.com/code/en). Make sure you have a valid subscription and have run `kimi login` before use. See [kimi.com/code](https://www.kimi.com/code/en) for the latest pricing tiers and quotas.
+> **Kimi Code membership required.** All tools ultimately hit Kimi Code, which needs an active [Kimi Code plan](https://www.kimi.com/code/en). The API tools (`kimi_query`, `kimi_verify`) authenticate with an **API key**; the codebase tools (`kimi_analyze`, `kimi_resume`) additionally need the **CLI installed + `kimi login`**. See [kimi.com/code](https://www.kimi.com/code/en) for pricing tiers and quotas.
 
 ## Install from source
 
@@ -126,6 +160,13 @@ Then use the `/login` (or `/setup`) command:
 1. Select **Kimi Code** as the platform
 2. Your browser opens for OAuth authorization
 3. Config is saved automatically to `~/.kimi/config.toml`
+
+> [!NOTE]
+> **`zsh: command not found: kimi` after install?** The installer puts the binary at `~/.local/bin/kimi`, which may not be on your `PATH`. Add it (then restart your shell or open a new tab):
+> ```bash
+> echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
+> ```
+> The MCP server calls the binary by absolute path, so this only affects running `kimi` yourself in a terminal (e.g. for `kimi login`).
 
 ### Option 2: Manual API Key Configuration
 
@@ -315,12 +356,12 @@ Each review session can be **resumed** (`kimi_resume`) — Kimi retains up to 25
 
 | Tool | Description | Timeout |
 |------|-------------|---------|
-| `kimi_analyze` | Deep codebase analysis (architecture, audit, refactoring) | 10 min |
-| `kimi_query` | Quick programming questions, no codebase context (API fallback when CLI absent) | 2 min |
-| `kimi_verify` | **API mode** — independent third-party verification of code/diffs/claims; no CLI required, context-driven | 5 min |
+| `kimi_analyze` | **CLI** — deep codebase analysis (architecture, audit, refactoring) | 10 min |
+| `kimi_query` | **API** — quick programming questions, no codebase context (CLI only if no key configured) | 2 min |
+| `kimi_verify` | **API** — independent third-party verification of code/diffs/claims; no CLI required, context-driven | 5 min |
 | `kimi_list_sessions` | List existing Kimi sessions with metadata | instant |
-| `kimi_resume` | Resume a previous session (up to 256K token context) | 10 min |
-| `kimi_status` | Check CLI installation, version, and authentication status | instant |
+| `kimi_resume` | **CLI** — resume a previous session (up to 256K token context) | 10 min |
+| `kimi_status` | Report API-configured state + CLI install/version/auth status | instant |
 | `kimi_cache_status` | View session cache statistics and performance metrics | instant |
 | `kimi_cache_invalidate` | Manually invalidate cached sessions (by dir or all) | instant |
 
@@ -424,8 +465,10 @@ npm install -g kimi-mcp-server # install globally
 
 ```
 src/
-├── index.ts           # MCP server setup, tool definitions
+├── index.ts           # MCP server setup, tool definitions, API-vs-CLI routing
+├── kimi-api.ts        # Direct Kimi Code API client (kimi_query / kimi_verify)
 ├── kimi-runner.ts     # Spawns kimi CLI, parses output, handles timeouts
+├── cache-manager.ts   # Session cache (warmup, reuse, invalidation)
 └── session-reader.ts  # Reads Kimi session metadata from ~/.kimi/
 ```
 

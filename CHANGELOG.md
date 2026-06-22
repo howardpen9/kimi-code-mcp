@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-06-22
+
+### Fixed
+
+- **`kimi_query` no longer breaks when the CLI is installed but not logged in.** The previous routing preferred the CLI whenever the binary merely *existed*, ignoring auth state, so `kimi_query` errored against an unauthenticated `kimi` CLI instead of using the configured API. It now **prefers the direct API** whenever a key is configured (a contextless query needs no codebase), falling back to the CLI only when no key is present
+
+### Changed
+
+- **`kimi_status`** now reports the **Kimi Code API configured state first** (the backend that actually serves `kimi_query`/`kimi_verify`), then the CLI install/version/auth state — making clear that a "not authenticated" CLI does not affect the API tools
+
+### Documentation
+
+- Added **"Two backends: API vs CLI"** and **"Guidelines for agents"** sections to the READMEs, documenting which tool uses which backend and what each requires
+- Documented the `~/.local/bin` `PATH` gotcha that causes `command not found: kimi` after install
+
 ## [0.4.0] - 2026-06-18
 
 ### Added
