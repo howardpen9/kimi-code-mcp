@@ -4,6 +4,14 @@
 
 ---
 
+<div align="center">
+  <img src="assets/token-savings-hero.png" alt="kimi-code-mcp — 把批量讀碼交給 Kimi Code(256K 上下文),Claude 端 token 成本省約 90%" width="760" />
+  <br />
+  <sub>示意估算。這個 ~90% 是 <b>Claude 端</b> 在分析密集任務上的 token 減少 —— <b>不是</b>總成本歸零:Kimi 自己的<a href="https://www.kimi.com/code/en">訂閱費</a>照算。monorepo 那列對應下方實際舉例,PDF/commits 兩列為粗略示意。</sub>
+</div>
+
+---
+
 MCP 伺服器，將 [Kimi Code](https://www.kimi.com/code)（模型 `kimi-for-coding`，256K 上下文，自動升級）與 [Claude Code](https://docs.anthropic.com/en/docs/claude-code) 串接——Claude 當指揮家，Kimi 負責大量閱讀。
 
 <div align="center">

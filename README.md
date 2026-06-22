@@ -4,15 +4,23 @@ English | **[中文說明](README_zh.md)**
 
 ---
 
-**Delegate codebase analysis from Claude to Kimi Code (`kimi-for-coding`, 256K) — cut token cost ~90%.**
+<div align="center">
+  <img src="assets/token-savings-hero.png" alt="kimi-code-mcp — delegate bulk codebase reading to Kimi Code (256K context) and cut Claude-side token cost by ~90%" width="760" />
+  <br />
+  <sub>Illustrative estimates. The ~90% is <b>Claude-side</b> token reduction on analysis-heavy tasks — <b>not</b> total cost: Kimi's own <a href="https://www.kimi.com/code/en">subscription</a> still applies. The monorepo row mirrors the example below; the PDF/commits rows are rough sketches.</sub>
+</div>
 
-| Task                         | Claude only | Claude + kimi-code-mcp | Savings |
-|------------------------------|-------------|------------------------|---------|
-| Analyze 200-file monorepo    | ~250K tok   | ~25K tok               | 90%     |
-| Summarize 50-page RFC PDF    | ~60K tok    | ~6K tok                | 90%     |
-| Cross-reference 100 commits  | ~80K tok    | ~8K tok                | 90%     |
+---
 
-<sub>*Illustrative — actual savings depend on task.</sub>
+**Delegate codebase analysis from Claude to Kimi Code (`kimi-for-coding`, 256K) — cut Claude-side token cost ~90%.**
+
+| Task                         | Claude only | Claude + kimi-code-mcp | Claude-side savings |
+|------------------------------|-------------|------------------------|---------------------|
+| Analyze 200-file monorepo    | ~250K tok   | ~25K tok               | ~90%                |
+| Summarize 50-page RFC PDF    | ~60K tok    | ~6K tok                | ~90% *(sketch)*     |
+| Cross-reference 100 commits  | ~80K tok    | ~8K tok                | ~90% *(sketch)*     |
+
+<sub>*Illustrative estimates — savings are on Claude tokens only and depend on the task; Kimi's subscription cost is separate. See [Token Economics](#token-economics).</sub>
 
 ## Quick start
 
