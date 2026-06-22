@@ -171,17 +171,20 @@ server.tool(
   async ({ prompt, thinking, max_output_tokens, include_thinking }) => {
     const maxChars = max_output_tokens ? max_output_tokens * 4 : DEFAULT_MAX_OUTPUT_CHARS
 
-    // Prefer the local CLI when installed; otherwise fall back to the direct API.
+    // A contextless query needs no codebase access, so prefer the direct API: it
+    // works with just a key and avoids the CLI's OAuth-login requirement (an installed
+    // but unauthenticated CLI otherwise fails here). Fall back to the CLI only when no
+    // API key is configured.
     let result
-    if (isKimiInstalled()) {
+    if (isApiConfigured()) {
+      result = await runKimiApi({ prompt, timeoutMs: 120_000, maxOutputChars: maxChars })
+    } else if (isKimiInstalled()) {
       result = await runKimi({
         prompt,
         thinking: thinking ?? false,
         timeoutMs: 120_000,
         maxOutputChars: maxChars,
       })
-    } else if (isApiConfigured()) {
-      result = await runKimiApi({ prompt, timeoutMs: 120_000, maxOutputChars: maxChars })
     } else {
       return { content: [{ type: 'text' as const, text: 'Error: kimi CLI not installed and no Kimi Code API key configured (set $KIMICODE_API_KEY or ~/.kimi/config.toml).' }], isError: true }
     }
@@ -370,9 +373,18 @@ server.tool(
   {},
   async () => {
     const status = await getKimiStatus()
+    const apiConfigured = isApiConfigured()
 
     const lines: string[] = []
-    lines.push(`## Kimi CLI Status`)
+    lines.push(`## Kimi Code API`)
+    lines.push(`- **Configured**: ${apiConfigured ? 'Yes' : 'No'}`)
+    lines.push(`  (serves \`kimi_query\` and \`kimi_verify\` directly — no CLI login needed)`)
+    if (!apiConfigured) {
+      lines.push(`  Set \`$KIMICODE_API_KEY\` or add \`api_key\` to \`~/.kimi/config.toml\`.`)
+    }
+
+    lines.push(`\n## Kimi CLI Status`)
+    lines.push(`(required only for \`kimi_analyze\` / \`kimi_resume\`, which read the codebase)`)
     lines.push(`- **Installed**: ${status.installed ? 'Yes' : 'No'}`)
     lines.push(`- **Binary**: \`${status.binPath}\``)
     if (status.version) lines.push(`- **Version**: ${status.version}`)
@@ -405,7 +417,7 @@ server.tool(
 
     return {
       content: [{ type: 'text' as const, text: lines.join('\n') }],
-      isError: !status.installed,
+      isError: !apiConfigured && !status.installed,
     }
   }
 )
