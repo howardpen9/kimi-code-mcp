@@ -215,6 +215,27 @@ model = "kimi-for-coding"
 export KIMICODE_API_KEY="sk-your-api-key"
 ```
 
+#### Choosing a model (`$KIMI_MODEL`)
+
+API-backed tools default to `kimi-for-coding`, which currently resolves to **K2.7
+Coding (262 144 token context)**. To target a different model — for example **K3**,
+with a 1M context — set `$KIMI_MODEL`:
+
+```bash
+export KIMI_MODEL="k3"        # or k3-256k, kimi-for-coding-highspeed, ...
+```
+
+List the ids available to your account with:
+
+```bash
+curl -s https://api.kimi.com/coding/v1/models \
+  -H "Authorization: Bearer $KIMICODE_API_KEY" | jq -r '.data[].id'
+```
+
+> **Note:** the API does not reject an unknown model id — it echoes it back and
+> silently serves a default. The reliable way to confirm which model answered is the
+> context limit: `kimi-for-coding` rejects prompts above 262 144 tokens, `k3` does not.
+
 Then reference it in `config.toml`:
 
 ```toml
