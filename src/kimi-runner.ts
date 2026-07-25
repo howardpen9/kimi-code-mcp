@@ -1,4 +1,5 @@
 import { spawn } from 'child_process'
+import { resolveModel } from './kimi-api.js'
 import * as path from 'path'
 import * as os from 'os'
 import * as fs from 'fs'
@@ -180,6 +181,9 @@ export function runKimi(config: KimiRunConfig): Promise<KimiResult> {
       '--print',
       '--output-format', 'stream-json',
       '--final-message-only',
+      // Without an explicit model the CLI aborts with "LLM not set" unless the
+      // user has a default configured. Pass the same model the API path uses.
+      '-m', resolveModel(),
     ]
 
     if (workDir) args.push('-w', workDir)
