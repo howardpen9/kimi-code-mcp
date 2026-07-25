@@ -8,7 +8,18 @@ import { truncateAtBoundary } from './kimi-runner.js'
 // a valid key with an unrecognized UA is rejected with HTTP 403. This UA is accepted.
 const KIMI_USER_AGENT = 'KimiCLI/1.0'
 const DEFAULT_BASE_URL = 'https://api.kimi.com/coding/v1'
-const DEFAULT_MODEL = 'kimi-for-coding'
+const FALLBACK_MODEL = 'kimi-for-coding'
+
+/**
+ * Resolve which Kimi model to call.
+ *
+ * Honours $KIMI_MODEL so users can target a specific model without editing code
+ * (e.g. `k3` for Kimi K3, 1M context). Defaults to `kimi-for-coding`, which
+ * currently resolves to K2.7 Coding. Available ids: GET /coding/v1/models.
+ */
+export function resolveModel(): string {
+  return process.env.KIMI_MODEL?.trim() || FALLBACK_MODEL
+}
 
 export interface KimiApiAuth {
   apiKey: string
@@ -101,7 +112,7 @@ export async function runKimiApi(config: KimiApiConfig): Promise<KimiResult> {
     }
   }
 
-  const { prompt, system, model = DEFAULT_MODEL, timeoutMs = 300_000 } = config
+  const { prompt, system, model = resolveModel(), timeoutMs = 300_000 } = config
   const maxOutputChars = config.maxOutputChars ?? 60_000
   // ~4 chars/token for the answer, plus headroom for the always-on reasoning pass.
   const maxTokens = Math.ceil(maxOutputChars / 4) + 4_000

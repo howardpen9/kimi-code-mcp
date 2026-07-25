@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
-import { loadApiAuth, isApiConfigured } from './kimi-api.js'
+import { loadApiAuth, isApiConfigured, resolveModel } from './kimi-api.js'
 
 const SAVED_ENV = { ...process.env }
 
@@ -79,5 +79,28 @@ describe('loadApiAuth', () => {
     process.env.KIMICODE_API_KEY = 'sk-x'
     process.env.KIMI_BASE_URL = 'https://api.kimi.com/coding/v1/'
     expect(loadApiAuth()?.baseUrl).toBe('https://api.kimi.com/coding/v1')
+  })
+})
+
+describe('resolveModel', () => {
+  afterEach(() => {
+    delete process.env.KIMI_MODEL
+  })
+
+  it('defaults to kimi-for-coding when $KIMI_MODEL is unset', () => {
+    delete process.env.KIMI_MODEL
+    expect(resolveModel()).toBe('kimi-for-coding')
+  })
+
+  it('honours $KIMI_MODEL', () => {
+    process.env.KIMI_MODEL = 'k3'
+    expect(resolveModel()).toBe('k3')
+  })
+
+  it('trims whitespace and ignores an empty value', () => {
+    process.env.KIMI_MODEL = '  k3-256k  '
+    expect(resolveModel()).toBe('k3-256k')
+    process.env.KIMI_MODEL = '   '
+    expect(resolveModel()).toBe('kimi-for-coding')
   })
 })
