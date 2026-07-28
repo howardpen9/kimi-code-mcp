@@ -2,18 +2,37 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
-import { runKimi, isKimiInstalled, getKimiStatus } from './kimi-runner.js'
-import { runKimiApi, isApiConfigured } from './kimi-api.js'
+import { runKimi, isKimiInstalled, getKimiStatus, type KimiResult } from './kimi-runner.js'
+import { runKimiApi, isApiConfigured, probeApiModel } from './kimi-api.js'
 import { listSessions } from './session-reader.js'
-import { CacheManager, getGlobalCacheManager } from './cache-manager.js'
+import { getGlobalCacheManager } from './cache-manager.js'
+import {
+  DEFAULT_MODEL,
+  modelDetectionFooter,
+  resolveModel,
+  isK3Model,
+} from './models.js'
 
 // Initialize global cache manager with debug enabled for development
 const cacheManager = getGlobalCacheManager({ debug: process.env.KIMI_CACHE_DEBUG === '1' })
 
 const server = new McpServer({
   name: 'kimi-code',
-  version: '0.4.0',
+  version: '0.5.0',
 })
+
+/** Shared optional model arg for tools that call Kimi. */
+const modelArg = z
+  .string()
+  .optional()
+  .describe(
+    `Model id/alias. Default: ${DEFAULT_MODEL} (K3). Examples: k3, kimi-code/k3, kimi-for-coding. Env override: KIMICODE_MODEL or KIMI_MODEL.`,
+  )
+
+function withModelFooter(text: string, result: KimiResult, modelArgValue?: string): string {
+  const resolved = resolveModel(modelArgValue ?? result.model)
+  return text + modelDetectionFooter(resolved, result.modelObserved)
+}
 
 // --- Output format instructions per detail level ---
 const FORMAT_INSTRUCTIONS: Record<string, string> = {
@@ -89,8 +108,9 @@ Output is budget-controlled: Kimi reads 200K+ tokens of source but returns a 5-1
       .describe('Include Kimi internal reasoning in output. Default: false (saves 10-30K tokens). Enable only for debugging.'),
     use_cache: z.boolean().optional()
       .describe('Enable automatic session caching (default: true). Set to false to bypass cache and create fresh session.'),
+    model: modelArg,
   },
-  async ({ prompt, work_dir, session_id, thinking, detail_level, max_output_tokens, include_thinking, use_cache }) => {
+  async ({ prompt, work_dir, session_id, thinking, detail_level, max_output_tokens, include_thinking, use_cache, model }) => {
     if (!isKimiInstalled()) {
       return { content: [{ type: 'text' as const, text: 'Error: kimi CLI not installed. Install via: uv tool install kimi-cli' }], isError: true }
     }
@@ -129,6 +149,7 @@ Output is budget-controlled: Kimi reads 200K+ tokens of source but returns a 5-1
       thinking: thinking ?? true,
       timeoutMs: 600_000,
       maxOutputChars: maxChars,
+      model,
     })
 
     if (!result.ok) {
@@ -138,12 +159,22 @@ Output is budget-controlled: Kimi reads 200K+ tokens of source but returns a 5-1
         return { 
           content: [{ 
             type: 'text' as const, 
-            text: `Error (cached session invalidated, retry may succeed): ${result.error}` 
+            text: withModelFooter(
+              `Error (cached session invalidated, retry may succeed): ${result.error}`,
+              result,
+              model,
+            ),
           }], 
           isError: true 
         }
       }
-      return { content: [{ type: 'text' as const, text: `Error: ${result.error}` }], isError: true }
+      return {
+        content: [{
+          type: 'text' as const,
+          text: withModelFooter(`Error: ${result.error}`, result, model),
+        }],
+        isError: true,
+      }
     }
 
     // Update cache with new session ID if returned
@@ -152,68 +183,86 @@ Output is budget-controlled: Kimi reads 200K+ tokens of source but returns a 5-1
     }
 
     const response = buildResponse(result.text, result.thinking, include_thinking ?? false)
-    return { content: [{ type: 'text' as const, text: response + cacheInfo }] }
+    return {
+      content: [{
+        type: 'text' as const,
+        text: withModelFooter(response + cacheInfo, result, model),
+      }],
+    }
   }
 )
 
 // --- Tool 2: kimi_query ---
 server.tool(
   'kimi_query',
-  'Ask Kimi Code a question without codebase context. Use for general programming questions, algorithm explanations, or getting a second opinion from Kimi\'s model.',
+  `Ask Kimi Code a question without codebase context. Default model: ${DEFAULT_MODEL} (K3). Use for general programming questions, algorithm explanations, or getting a second opinion.`,
   {
     prompt: z.string().describe('The question to ask Kimi'),
-    thinking: z.boolean().optional().describe('Enable thinking mode (default: false for speed)'),
+    thinking: z.boolean().optional().describe('Enable thinking mode (default: false for speed; CLI path only)'),
     max_output_tokens: z.number().optional()
       .describe('Max tokens in response (~4 chars/token). Default: 15000.'),
     include_thinking: z.boolean().optional()
       .describe('Include Kimi internal reasoning. Default: false.'),
+    model: modelArg,
   },
-  async ({ prompt, thinking, max_output_tokens, include_thinking }) => {
+  async ({ prompt, thinking, max_output_tokens, include_thinking, model }) => {
     const maxChars = max_output_tokens ? max_output_tokens * 4 : DEFAULT_MAX_OUTPUT_CHARS
 
     // A contextless query needs no codebase access, so prefer the direct API: it
     // works with just a key and avoids the CLI's OAuth-login requirement (an installed
     // but unauthenticated CLI otherwise fails here). Fall back to the CLI only when no
     // API key is configured.
-    let result
+    let result: KimiResult
     if (isApiConfigured()) {
-      result = await runKimiApi({ prompt, timeoutMs: 120_000, maxOutputChars: maxChars })
+      result = await runKimiApi({ prompt, model, timeoutMs: 120_000, maxOutputChars: maxChars })
     } else if (isKimiInstalled()) {
       result = await runKimi({
         prompt,
         thinking: thinking ?? false,
         timeoutMs: 120_000,
         maxOutputChars: maxChars,
+        model,
       })
     } else {
       return { content: [{ type: 'text' as const, text: 'Error: kimi CLI not installed and no Kimi Code API key configured (set $KIMICODE_API_KEY or ~/.kimi/config.toml).' }], isError: true }
     }
 
     if (!result.ok) {
-      return { content: [{ type: 'text' as const, text: `Error: ${result.error}` }], isError: true }
+      return {
+        content: [{
+          type: 'text' as const,
+          text: withModelFooter(`Error: ${result.error}`, result, model),
+        }],
+        isError: true,
+      }
     }
 
     const response = buildResponse(result.text, result.thinking, include_thinking ?? false)
-    return { content: [{ type: 'text' as const, text: response }] }
+    return {
+      content: [{ type: 'text' as const, text: withModelFooter(response, result, model) }],
+    }
   }
 )
 
 // --- Tool 2b: kimi_verify (direct API, no CLI required) ---
 server.tool(
   'kimi_verify',
-  `Get an INDEPENDENT second opinion from Kimi Code (kimi-for-coding, 256K context) acting as an external third-party verifier. Calls the Kimi Code API directly — no CLI install required, just an API key (env KIMICODE_API_KEY or ~/.kimi/config.toml).
+  `Get an INDEPENDENT second opinion from Kimi Code (default ${DEFAULT_MODEL} / K3, 256K context) acting as an external third-party verifier. Calls the Kimi Code API directly — no CLI install required, just an API key (env KIMICODE_API_KEY or ~/.kimi/config.toml).
 
 USE THIS to cross-check your own work: confirm a fix is correct, hunt for bugs / edge cases / security issues in a diff, sanity-check a claim or plan, or get a dissenting view before you commit. Different model, independent judgment.
 
-CRITICAL — pass full context: Kimi sees ONLY the 'context' string. It has NO access to this session, the repository, prior messages, or any tools. Paste the ACTUAL code/diff/claim AND the surrounding context it needs (the goal, constraints, assumptions, relevant signatures). Vague or partial context produces vague, useless verification.`,
+CRITICAL — pass full context: Kimi sees ONLY the 'context' string. It has NO access to this session, the repository, prior messages, or any tools. Paste the ACTUAL code/diff/claim AND the surrounding context it needs (the goal, constraints, assumptions, relevant signatures). Vague or partial context produces vague, useless verification.
+
+Detection: every response ends with a [kimi-model …] footer (requested/observed/k3=yes|no).`,
   {
     context: z.string().describe('Self-contained material for Kimi to examine: the actual code / diff / claim / plan PLUS the context needed to judge it (intent, constraints, assumptions, relevant signatures). Kimi sees nothing but this.'),
     question: z.string().optional().describe('What to verify or focus on, e.g. "is this SQL-injection safe?" or "does this handle empty input and concurrency?". Default: a general independent correctness review.'),
     role: z.string().optional().describe('Override the reviewer persona (system instruction). Default: a meticulous, independent senior engineer with no stake in the code.'),
     max_output_tokens: z.number().optional().describe('Max answer tokens (~4 chars/token). Default: 15000.'),
     include_thinking: z.boolean().optional().describe('Include Kimi internal reasoning in the output. Default: false.'),
+    model: modelArg,
   },
-  async ({ context, question, role, max_output_tokens, include_thinking }) => {
+  async ({ context, question, role, max_output_tokens, include_thinking, model }) => {
     if (!isApiConfigured()) {
       return { content: [{ type: 'text' as const, text: 'Error: no Kimi Code API key found. Set $KIMICODE_API_KEY or add api_key to ~/.kimi/config.toml.' }], isError: true }
     }
@@ -226,14 +275,22 @@ CRITICAL — pass full context: Kimi sees ONLY the 'context' string. It has NO a
     const prompt = `## Your task (independent verifier)\n${focus}\n\n## Material to verify\n${context}\n${AI_CONSUMER_NOTICE}`
     const maxChars = max_output_tokens ? max_output_tokens * 4 : DEFAULT_MAX_OUTPUT_CHARS
 
-    const result = await runKimiApi({ prompt, system, timeoutMs: 300_000, maxOutputChars: maxChars })
+    const result = await runKimiApi({ prompt, system, model, timeoutMs: 300_000, maxOutputChars: maxChars })
 
     if (!result.ok) {
-      return { content: [{ type: 'text' as const, text: `Error: ${result.error}` }], isError: true }
+      return {
+        content: [{
+          type: 'text' as const,
+          text: withModelFooter(`Error: ${result.error}`, result, model),
+        }],
+        isError: true,
+      }
     }
 
     const response = buildResponse(result.text, result.thinking, include_thinking ?? false)
-    return { content: [{ type: 'text' as const, text: response }] }
+    return {
+      content: [{ type: 'text' as const, text: withModelFooter(response, result, model) }],
+    }
   }
 )
 
@@ -339,8 +396,9 @@ server.tool(
       .describe('Max tokens in response (~4 chars/token). Default: 15000.'),
     include_thinking: z.boolean().optional()
       .describe('Include Kimi internal reasoning. Default: false.'),
+    model: modelArg,
   },
-  async ({ session_id, prompt, work_dir, thinking, detail_level, max_output_tokens, include_thinking }) => {
+  async ({ session_id, prompt, work_dir, thinking, detail_level, max_output_tokens, include_thinking, model }) => {
     if (!isKimiInstalled()) {
       return { content: [{ type: 'text' as const, text: 'Error: kimi CLI not installed.' }], isError: true }
     }
@@ -355,32 +413,72 @@ server.tool(
       thinking: thinking ?? true,
       timeoutMs: 600_000,
       maxOutputChars: maxChars,
+      model,
     })
 
     if (!result.ok) {
-      return { content: [{ type: 'text' as const, text: `Error: ${result.error}` }], isError: true }
+      return {
+        content: [{
+          type: 'text' as const,
+          text: withModelFooter(`Error: ${result.error}`, result, model),
+        }],
+        isError: true,
+      }
     }
 
     const response = buildResponse(result.text, result.thinking, include_thinking ?? false)
-    return { content: [{ type: 'text' as const, text: response }] }
+    return {
+      content: [{ type: 'text' as const, text: withModelFooter(response, result, model) }],
+    }
   }
 )
 
 // --- Tool 7: kimi_status ---
 server.tool(
   'kimi_status',
-  'Check Kimi CLI installation status, version, and authentication. Use this to diagnose issues before running analysis.',
-  {},
-  async () => {
+  'Check Kimi CLI/API status, default model (K3 detection), and auth. Set probe_api=true for a live Coding API model echo check.',
+  {
+    probe_api: z
+      .boolean()
+      .optional()
+      .describe('If true, send a tiny live API completion and report observed model id (default: false).'),
+    model: modelArg.describe('Model to probe when probe_api=true (default: k3).'),
+  },
+  async ({ probe_api, model }) => {
     const status = await getKimiStatus()
     const apiConfigured = isApiConfigured()
+    const resolvedDefault = resolveModel(model)
 
     const lines: string[] = []
-    lines.push(`## Kimi Code API`)
+    lines.push(`## Model defaults`)
+    lines.push(`- **MCP default**: \`${DEFAULT_MODEL}\` (${isK3Model(DEFAULT_MODEL) ? 'K3 family' : 'not K3'})`)
+    lines.push(`- **Resolved for this call**: \`${resolvedDefault.id}\` → api=\`${resolvedDefault.apiModel}\` cli=\`${resolvedDefault.cliAlias}\` (source=${resolvedDefault.source})`)
+    if (process.env.KIMICODE_MODEL || process.env.KIMI_MODEL) {
+      lines.push(`- **Env override**: KIMICODE_MODEL=${process.env.KIMICODE_MODEL ?? '(unset)'} KIMI_MODEL=${process.env.KIMI_MODEL ?? '(unset)'}`)
+    }
+
+    lines.push(`\n## Kimi Code API`)
     lines.push(`- **Configured**: ${apiConfigured ? 'Yes' : 'No'}`)
     lines.push(`  (serves \`kimi_query\` and \`kimi_verify\` directly — no CLI login needed)`)
     if (!apiConfigured) {
       lines.push(`  Set \`$KIMICODE_API_KEY\` or add \`api_key\` to \`~/.kimi/config.toml\`.`)
+    }
+
+    if (probe_api && apiConfigured) {
+      lines.push(`\n### Live API model probe`)
+      try {
+        const probe = await probeApiModel(model)
+        lines.push(`- **Requested**: \`${probe.requested}\``)
+        lines.push(`- **Observed (API echo)**: \`${probe.observed ?? '(none)'}\``)
+        lines.push(`- **K3?** ${probe.isK3 ? '✅ yes' : '❌ no'}`)
+        if (probe.sample) lines.push(`- **Sample**: ${probe.sample}`)
+        if (probe.error) lines.push(`- **Note**: ${probe.error}`)
+      } catch (err) {
+        lines.push(`- **Probe failed**: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    } else if (probe_api && !apiConfigured) {
+      lines.push(`\n### Live API model probe`)
+      lines.push(`- Skipped — API key not configured`)
     }
 
     lines.push(`\n## Kimi CLI Status`)
@@ -390,6 +488,9 @@ server.tool(
     if (status.version) lines.push(`- **Version**: ${status.version}`)
     if (status.authenticated !== undefined) {
       lines.push(`- **Authenticated**: ${status.authenticated ? 'Yes' : 'No'}`)
+    }
+    if (status.cliDefaultModel) {
+      lines.push(`- **CLI default model** (\`kimi provider list\`): \`${status.cliDefaultModel}\` ${status.cliDefaultIsK3 ? '✅ K3' : '❌ not K3'}`)
     }
     if (status.error) lines.push(`\n**Action required**: ${status.error}`)
 
@@ -414,6 +515,11 @@ server.tool(
       const hitRate = ((cacheStats.totalHits / (cacheStats.totalHits + cacheStats.totalMisses)) * 100).toFixed(1)
       lines.push(`- **Hit rate**: ${hitRate}%`)
     }
+
+    lines.push(`\n## How to detect K3 on any call`)
+    lines.push(`1. Tool responses end with \`[kimi-model requested=… observed=… k3=yes|no]\``)
+    lines.push(`2. \`kimi_status\` with \`probe_api: true\` (API echo of model id)`)
+    lines.push(`3. CLI: \`kimi provider list\` → Default model line; or session export log \`model=k3 modelAlias=kimi-code/k3\``)
 
     return {
       content: [{ type: 'text' as const, text: lines.join('\n') }],

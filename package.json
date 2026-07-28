@@ -1,7 +1,7 @@
 {
   "name": "kimi-mcp-server",
-  "version": "0.4.1",
-  "description": "MCP server for Claude Code × Kimi Code (kimi-for-coding, 256K context) — delegate bulk codebase analysis to Kimi, save 90% on token costs",
+  "version": "0.5.0",
+  "description": "MCP server for Claude Code × Kimi Code (default K3 / k3, 256K context) — delegate bulk codebase analysis to Kimi, save 90% on token costs",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
@@ -20,6 +20,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
+    "probe:model": "npm run build && node scripts/probe-model.mjs",
+    "probe:model:cli": "npm run build && node scripts/probe-model.mjs --cli",
     "prepublishOnly": "npm run test && npm run build"
   },
   "keywords": [

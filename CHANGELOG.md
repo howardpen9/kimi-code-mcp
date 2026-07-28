@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-07-17
+
+### Changed
+
+- **Default model is K3 (`k3`)** for API + CLI paths (was hard-coded `kimi-for-coding` on API tools)
+- CLI invocations always pass `-m <alias>` (default `kimi-code/k3`) so the model is explicit
+
+### Added
+
+- **`model` tool argument** on `kimi_query`, `kimi_verify`, `kimi_analyze`, `kimi_resume`, and `kimi_status` probe
+- Env overrides: `KIMICODE_MODEL` / `KIMI_MODEL`
+- **Detection footer** on tool responses: `[kimi-model requested=… observed=… k3=yes|no]`
+- **`kimi_status` model section** + optional `probe_api: true` live API model echo
+- CLI default detection via `kimi provider list`
+- `npm run probe:model` live probe script
+- `src/models.ts` shared resolver (`resolveModel`, `isK3Model`, …)
+
 ## [0.4.1] - 2026-06-22
 
 ### Fixed

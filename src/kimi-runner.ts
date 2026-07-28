@@ -1,7 +1,8 @@
-import { spawn } from 'child_process'
+import { spawn, execFileSync } from 'child_process'
 import * as path from 'path'
 import * as os from 'os'
 import * as fs from 'fs'
+import { parseProviderListDefault, resolveModel } from './models.js'
 
 /** Configuration for running a Kimi CLI session */
 export interface KimiRunConfig {
@@ -17,6 +18,12 @@ export interface KimiRunConfig {
   timeoutMs?: number
   /** Maximum characters in output. Truncated at clean boundary if exceeded. Default: 60000 (~15K tokens) */
   maxOutputChars?: number
+  /**
+   * Model id / alias (default: k3 via resolveModel).
+   * Passed to CLI as `-m <cliAlias>`.
+   * Env override: KIMICODE_MODEL / KIMI_MODEL.
+   */
+  model?: string
 }
 
 export interface KimiResult {
@@ -26,6 +33,12 @@ export interface KimiResult {
   error?: string
   /** Session ID if available (for caching) */
   sessionId?: string
+  /** Canonical model id we requested (e.g. k3) */
+  model?: string
+  /** Exact id/alias sent to the backend */
+  modelRequested?: string
+  /** Model id observed from the backend response when available */
+  modelObserved?: string
 }
 
 const KIMI_BIN = path.join(os.homedir(), '.local/bin/kimi')
@@ -40,6 +53,19 @@ export interface KimiStatus {
   version?: string
   authenticated?: boolean
   error?: string
+  /** Default model reported by `kimi provider list` when available */
+  cliDefaultModel?: string
+  /** Whether CLI default is K3 family */
+  cliDefaultIsK3?: boolean
+}
+
+function kimiEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env }
+  const localBin = path.join(os.homedir(), '.local/bin')
+  if (!env.PATH?.includes(localBin)) {
+    env.PATH = `${localBin}:${env.PATH || ''}`
+  }
+  return env
 }
 
 export async function getKimiStatus(): Promise<KimiStatus> {
@@ -53,13 +79,11 @@ export async function getKimiStatus(): Promise<KimiStatus> {
 
   // Check version
   try {
-    const { execSync } = await import('child_process')
-    const env = { ...process.env }
-    const localBin = path.join(os.homedir(), '.local/bin')
-    if (!env.PATH?.includes(localBin)) {
-      env.PATH = `${localBin}:${env.PATH || ''}`
-    }
-    status.version = execSync(`${KIMI_BIN} --version`, { encoding: 'utf-8', timeout: 5000, env }).trim()
+    status.version = execFileSync(KIMI_BIN, ['--version'], {
+      encoding: 'utf-8',
+      timeout: 5000,
+      env: kimiEnv(),
+    }).trim()
   } catch {
     status.version = '(unable to detect)'
   }
@@ -86,6 +110,22 @@ export async function getKimiStatus(): Promise<KimiStatus> {
     }
   } catch {
     status.authenticated = undefined
+  }
+
+  // CLI default model detection (no network chat — just provider list)
+  try {
+    const out = execFileSync(KIMI_BIN, ['provider', 'list'], {
+      encoding: 'utf-8',
+      timeout: 15_000,
+      env: kimiEnv(),
+    })
+    const def = parseProviderListDefault(out)
+    if (def) {
+      status.cliDefaultModel = def
+      status.cliDefaultIsK3 = /k3/i.test(def)
+    }
+  } catch {
+    // optional — older CLIs may not have provider list
   }
 
   return status
@@ -173,9 +213,11 @@ export function truncateAtBoundary(text: string, maxChars: number): string {
 
 export function runKimi(config: KimiRunConfig): Promise<KimiResult> {
   const { prompt, workDir, sessionId, thinking, timeoutMs = 300_000 } = config
+  const resolved = resolveModel(config.model)
 
   return new Promise((resolve) => {
     const args = [
+      '-m', resolved.cliAlias,
       '-p', prompt,
       '--print',
       '--output-format', 'stream-json',
@@ -186,12 +228,7 @@ export function runKimi(config: KimiRunConfig): Promise<KimiResult> {
     if (sessionId) args.push('-S', sessionId)
     if (thinking === false) args.push('--no-thinking')
 
-    const env = { ...process.env }
-    // Ensure ~/.local/bin is in PATH
-    const localBin = path.join(os.homedir(), '.local/bin')
-    if (!env.PATH?.includes(localBin)) {
-      env.PATH = `${localBin}:${env.PATH || ''}`
-    }
+    const env = kimiEnv()
 
     const proc = spawn(KIMI_BIN, args, {
       env,
@@ -210,7 +247,13 @@ export function runKimi(config: KimiRunConfig): Promise<KimiResult> {
       setTimeout(() => {
         if (!proc.killed) proc.kill('SIGKILL')
       }, 5000)
-      resolve({ ok: false, text: '', error: `Kimi timed out after ${Math.round(timeoutMs / 1000)}s` })
+      resolve({
+        ok: false,
+        text: '',
+        error: `Kimi timed out after ${Math.round(timeoutMs / 1000)}s`,
+        model: resolved.id,
+        modelRequested: resolved.cliAlias,
+      })
     }, timeoutMs)
 
     proc.on('close', (code) => {
@@ -219,15 +262,27 @@ export function runKimi(config: KimiRunConfig): Promise<KimiResult> {
       if (code !== 0) {
         // Check for common errors
         if (stderr.includes('login') || stderr.includes('authenticate')) {
-          resolve({ ok: false, text: '', error: 'Kimi not authenticated. Run: kimi login' })
+          resolve({
+            ok: false,
+            text: '',
+            error: 'Kimi not authenticated. Run: kimi login',
+            model: resolved.id,
+            modelRequested: resolved.cliAlias,
+          })
           return
         }
-        resolve({ ok: false, text: '', error: stderr.trim() || `kimi exited with code ${code}` })
+        resolve({
+          ok: false,
+          text: '',
+          error: stderr.trim() || `kimi exited with code ${code}`,
+          model: resolved.id,
+          modelRequested: resolved.cliAlias,
+        })
         return
       }
 
       const parsed = parseKimiOutput(stdout)
-      const sessionId = extractSessionId(stderr)
+      const extractedSessionId = extractSessionId(stderr)
       const maxChars = config.maxOutputChars ?? 60_000
 
       if (parsed.text.length > maxChars) {
@@ -237,15 +292,40 @@ export function runKimi(config: KimiRunConfig): Promise<KimiResult> {
         parsed.thinking = parsed.thinking.slice(0, Math.floor(maxChars / 2)) + '\n[THINKING TRUNCATED]'
       }
 
-      resolve({ ok: true, ...parsed, sessionId })
+      // Best-effort observe model from CLI stderr (some versions log model=)
+      const observedMatch =
+        stderr.match(/modelAlias=(\S+)/)?.[1] ||
+        stderr.match(/\bmodel=(\S+)/)?.[1] ||
+        undefined
+
+      resolve({
+        ok: true,
+        ...parsed,
+        sessionId: extractedSessionId,
+        model: resolved.id,
+        modelRequested: resolved.cliAlias,
+        modelObserved: observedMatch,
+      })
     })
 
     proc.on('error', (err) => {
       clearTimeout(timer)
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-        resolve({ ok: false, text: '', error: 'kimi CLI not found. Install via: uv tool install kimi-cli' })
+        resolve({
+          ok: false,
+          text: '',
+          error: 'kimi CLI not found. Install via: uv tool install kimi-cli',
+          model: resolved.id,
+          modelRequested: resolved.cliAlias,
+        })
       } else {
-        resolve({ ok: false, text: '', error: String(err) })
+        resolve({
+          ok: false,
+          text: '',
+          error: String(err),
+          model: resolved.id,
+          modelRequested: resolved.cliAlias,
+        })
       }
     })
   })

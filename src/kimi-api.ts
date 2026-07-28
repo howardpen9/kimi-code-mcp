@@ -3,12 +3,12 @@ import * as os from 'os'
 import * as fs from 'fs'
 import type { KimiResult } from './kimi-runner.js'
 import { truncateAtBoundary } from './kimi-runner.js'
+import { resolveModel } from './models.js'
 
 // The Kimi Code coding endpoint only serves recognized coding-agent User-Agents;
 // a valid key with an unrecognized UA is rejected with HTTP 403. This UA is accepted.
 const KIMI_USER_AGENT = 'KimiCLI/1.0'
 const DEFAULT_BASE_URL = 'https://api.kimi.com/coding/v1'
-const DEFAULT_MODEL = 'kimi-for-coding'
 
 export interface KimiApiAuth {
   apiKey: string
@@ -78,7 +78,11 @@ export interface KimiApiConfig {
   prompt: string
   /** Optional system instruction to steer Kimi (e.g. "you are an independent verifier") */
   system?: string
-  /** Model id (default: kimi-for-coding) */
+  /**
+   * Model id / alias (default: k3 via resolveModel).
+   * Accepts `k3`, `kimi-code/k3`, `kimi-for-coding`, or any API-accepted id.
+   * Env override: KIMICODE_MODEL / KIMI_MODEL.
+   */
   model?: string
   /** Timeout in milliseconds (default: 300000) */
   timeoutMs?: number
@@ -88,8 +92,11 @@ export interface KimiApiConfig {
 
 /**
  * Call the Kimi Code API directly (no CLI). Returns the same KimiResult shape as runKimi.
- * Note: kimi-for-coding is thinking-only, so the model always produces reasoning_content;
+ * Note: several coding models are thinking-first, so the model may produce reasoning_content;
  * the token budget is sized to leave headroom for it so the answer is not starved.
+ *
+ * Detection: successful responses set `model` / `modelObserved` from the API `model` field
+ * (echo of the requested id — reliable for k3 vs kimi-for-coding checks).
  */
 export async function runKimiApi(config: KimiApiConfig): Promise<KimiResult> {
   const auth = loadApiAuth()
@@ -101,10 +108,12 @@ export async function runKimiApi(config: KimiApiConfig): Promise<KimiResult> {
     }
   }
 
-  const { prompt, system, model = DEFAULT_MODEL, timeoutMs = 300_000 } = config
+  const resolved = resolveModel(config.model)
+  const { prompt, system, timeoutMs = 300_000 } = config
   const maxOutputChars = config.maxOutputChars ?? 60_000
   // ~4 chars/token for the answer, plus headroom for the always-on reasoning pass.
-  const maxTokens = Math.ceil(maxOutputChars / 4) + 4_000
+  // K3 often spends more tokens on reasoning than K2.7; keep generous headroom.
+  const maxTokens = Math.ceil(maxOutputChars / 4) + 8_000
 
   const messages: Array<{ role: string; content: string }> = []
   if (system) messages.push({ role: 'system', content: system })
@@ -123,14 +132,31 @@ export async function runKimiApi(config: KimiApiConfig): Promise<KimiResult> {
         'Content-Type': 'application/json',
         'User-Agent': KIMI_USER_AGENT,
       },
-      body: JSON.stringify({ model, messages, temperature: 1, max_tokens: maxTokens }),
+      body: JSON.stringify({
+        model: resolved.apiModel,
+        messages,
+        temperature: 1,
+        max_tokens: maxTokens,
+      }),
     })
   } catch (err) {
     clearTimeout(timer)
     if (err instanceof Error && err.name === 'AbortError') {
-      return { ok: false, text: '', error: `Kimi API timed out after ${Math.round(timeoutMs / 1000)}s` }
+      return {
+        ok: false,
+        text: '',
+        error: `Kimi API timed out after ${Math.round(timeoutMs / 1000)}s`,
+        model: resolved.id,
+        modelRequested: resolved.apiModel,
+      }
     }
-    return { ok: false, text: '', error: `Kimi API network error: ${err instanceof Error ? err.message : String(err)}` }
+    return {
+      ok: false,
+      text: '',
+      error: `Kimi API network error: ${err instanceof Error ? err.message : String(err)}`,
+      model: resolved.id,
+      modelRequested: resolved.apiModel,
+    }
   }
   clearTimeout(timer)
 
@@ -141,15 +167,30 @@ export async function runKimiApi(config: KimiApiConfig): Promise<KimiResult> {
       const parsed = JSON.parse(bodyText)
       if (parsed?.error?.message) msg = parsed.error.message
     } catch { /* keep raw slice */ }
-    return { ok: false, text: '', error: `Kimi API HTTP ${res.status}: ${msg}` }
+    return {
+      ok: false,
+      text: '',
+      error: `Kimi API HTTP ${res.status}: ${msg}`,
+      model: resolved.id,
+      modelRequested: resolved.apiModel,
+    }
   }
 
   let data: any
   try {
     data = JSON.parse(bodyText)
   } catch {
-    return { ok: false, text: '', error: `Kimi API returned non-JSON: ${bodyText.slice(0, 200)}` }
+    return {
+      ok: false,
+      text: '',
+      error: `Kimi API returned non-JSON: ${bodyText.slice(0, 200)}`,
+      model: resolved.id,
+      modelRequested: resolved.apiModel,
+    }
   }
+
+  const observed: string | undefined =
+    typeof data?.model === 'string' && data.model.trim() ? data.model.trim() : undefined
 
   const message = data?.choices?.[0]?.message ?? {}
   let text: string = (message.content || '').trim()
@@ -157,14 +198,66 @@ export async function runKimiApi(config: KimiApiConfig): Promise<KimiResult> {
 
   if (!text) {
     if (thinking) {
-      return { ok: false, text: '', thinking, error: 'Kimi API returned only reasoning (no answer). Raise max_output_tokens.' }
+      return {
+        ok: false,
+        text: '',
+        thinking,
+        error: 'Kimi API returned only reasoning (no answer). Raise max_output_tokens.',
+        model: resolved.id,
+        modelRequested: resolved.apiModel,
+        modelObserved: observed,
+      }
     }
-    return { ok: false, text: '', error: `Kimi API returned an empty message: ${bodyText.slice(0, 200)}` }
+    return {
+      ok: false,
+      text: '',
+      error: `Kimi API returned an empty message: ${bodyText.slice(0, 200)}`,
+      model: resolved.id,
+      modelRequested: resolved.apiModel,
+      modelObserved: observed,
+    }
   }
 
   if (text.length > maxOutputChars) {
     text = truncateAtBoundary(text, maxOutputChars)
   }
 
-  return { ok: true, text, thinking }
+  return {
+    ok: true,
+    text,
+    thinking,
+    model: resolved.id,
+    modelRequested: resolved.apiModel,
+    modelObserved: observed,
+  }
+}
+
+/**
+ * Lightweight live probe: one-token-ish completion that records which model
+ * the Coding API actually echoes back. Used by kimi_status detection.
+ */
+export async function probeApiModel(model?: string): Promise<{
+  ok: boolean
+  requested: string
+  observed?: string
+  isK3: boolean
+  error?: string
+  sample?: string
+}> {
+  const resolved = resolveModel(model)
+  const result = await runKimiApi({
+    prompt: 'Reply with exactly one word: pong',
+    model: resolved.apiModel,
+    timeoutMs: 90_000,
+    maxOutputChars: 200,
+  })
+  const observed = result.modelObserved
+  return {
+    ok: result.ok || !!observed, // observed alone still proves routing even if only-reasoning
+    requested: resolved.apiModel,
+    observed,
+    isK3: resolved.family === 'k3' && (!observed || /k3/i.test(observed)),
+    error: result.ok ? undefined : result.error,
+    sample: result.text?.slice(0, 80),
+  }
 }
