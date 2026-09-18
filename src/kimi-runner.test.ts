@@ -1,5 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { parseKimiOutput, extractSessionId, truncateAtBoundary, isKimiInstalled } from './kimi-runner.js'
+import {
+  parseKimiOutput,
+  extractSessionId,
+  extractSessionIdFromStream,
+  truncateAtBoundary,
+  isKimiInstalled,
+  cliSupportsFlag,
+  buildKimiArgs,
+} from './kimi-runner.js'
 
 // ---------------------------------------------------------------------------
 // extractSessionId
@@ -165,5 +173,89 @@ describe('isKimiInstalled', () => {
   it('returns a boolean', () => {
     const result = isKimiInstalled()
     expect(typeof result).toBe('boolean')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// extractSessionIdFromStream
+// ---------------------------------------------------------------------------
+
+describe('extractSessionIdFromStream', () => {
+  it('extracts session_id from the trailing meta line (kimi-code >= 0.28)', () => {
+    const stdout = [
+      '{"role":"assistant","content":"done"}',
+      '{"role":"meta","type":"session.resume_hint","session_id":"session_f26c9bc9-8992-43f5-a948-8288af2a5547"}',
+    ].join('\n')
+    expect(extractSessionIdFromStream(stdout)).toBe('session_f26c9bc9-8992-43f5-a948-8288af2a5547')
+  })
+
+  it('accepts the camelCase spelling', () => {
+    expect(extractSessionIdFromStream('{"sessionId":"session_abc"}')).toBe('session_abc')
+  })
+
+  it('ignores non-JSON lines and returns undefined when absent', () => {
+    expect(extractSessionIdFromStream('loading...\n{"role":"assistant","content":"hi"}')).toBeUndefined()
+    expect(extractSessionIdFromStream('')).toBeUndefined()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// cliSupportsFlag / buildKimiArgs
+// ---------------------------------------------------------------------------
+
+const MODERN_HELP = `Options:
+  -m, --model <model>           LLM model alias to use for this invocation.
+  -p, --prompt <prompt>         Run one prompt non-interactively and print the response.
+  --output-format <format>      Output format for prompt mode.
+  -S, --session [id]            Resume a session.`
+
+const LEGACY_HELP = `Options:
+  -p, --prompt <prompt>         Run one prompt non-interactively.
+  --print                       Print mode.
+  --final-message-only          Only emit the final message.
+  -w, --work-dir <dir>          Working directory.
+  --no-thinking                 Disable thinking.`
+
+describe('cliSupportsFlag', () => {
+  it('detects flags present in help output', () => {
+    expect(cliSupportsFlag('--print', LEGACY_HELP)).toBe(true)
+    expect(cliSupportsFlag('-w', LEGACY_HELP)).toBe(true)
+  })
+
+  it('does not report flags the CLI dropped', () => {
+    expect(cliSupportsFlag('--print', MODERN_HELP)).toBe(false)
+    expect(cliSupportsFlag('--final-message-only', MODERN_HELP)).toBe(false)
+    expect(cliSupportsFlag('-w', MODERN_HELP)).toBe(false)
+  })
+
+  it('does not match a flag that is only a prefix of another', () => {
+    expect(cliSupportsFlag('--out', MODERN_HELP)).toBe(false)
+  })
+
+  it('treats unreadable help as the modern CLI', () => {
+    expect(cliSupportsFlag('--print', '')).toBe(false)
+  })
+})
+
+describe('buildKimiArgs', () => {
+  const supportsModern = (flag: string) => cliSupportsFlag(flag, MODERN_HELP)
+  const supportsLegacy = (flag: string) => cliSupportsFlag(flag, LEGACY_HELP)
+
+  it('omits dropped flags on kimi-code >= 0.28', () => {
+    const args = buildKimiArgs({ prompt: 'hi', modelAlias: 'kimi-code/k3', workDir: '/repo', thinking: false }, supportsModern)
+    expect(args).toEqual(['-m', 'kimi-code/k3', '-p', 'hi', '--output-format', 'stream-json'])
+  })
+
+  it('keeps the legacy flags when the CLI still advertises them', () => {
+    const args = buildKimiArgs({ prompt: 'hi', workDir: '/repo', thinking: false }, supportsLegacy)
+    expect(args).toEqual([
+      '-p', 'hi', '--print', '--output-format', 'stream-json',
+      '--final-message-only', '-w', '/repo', '--no-thinking',
+    ])
+  })
+
+  it('passes the session id through on both generations', () => {
+    expect(buildKimiArgs({ prompt: 'hi', sessionId: 'session_abc' }, supportsModern)).toContain('session_abc')
+    expect(buildKimiArgs({ prompt: 'hi', sessionId: 'session_abc' }, supportsLegacy)).toContain('-S')
   })
 })

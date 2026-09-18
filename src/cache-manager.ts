@@ -10,6 +10,7 @@
 
 import * as fs from 'fs'
 import * as path from 'path'
+import { KIMI_BIN, buildKimiArgs } from './kimi-runner.js'
 import { spawn } from 'child_process'
 import { createHash } from 'crypto'
 
@@ -207,26 +208,18 @@ export class CacheManager {
 
     this.log(`Warming cache for: ${workDir}`)
 
-    const KIMI_BIN = path.join(process.env.HOME || '', '.local/bin/kimi')
     
     // Use a lightweight warmup prompt that loads context without heavy processing
     const warmupPrompt = `Please read and index this codebase structure for efficient querying.
 This is a cache warming request - focus on loading files into context.
 Acknowledge when you've loaded the main files (no detailed analysis needed).`
 
-    const args = [
-      '-p', warmupPrompt,
-      '--print',
-      '--output-format', 'stream-json',
-      '--final-message-only',
-      '-w', workDir,
-    ]
-
-    if (!thinking) args.push('--no-thinking')
+    // Flags are probed per CLI version — see buildKimiArgs.
+    const args = buildKimiArgs({ prompt: warmupPrompt, workDir, thinking })
 
     return new Promise((resolve, reject) => {
       const env = { ...process.env }
-      const localBin = path.join(process.env.HOME || '', '.local/bin')
+      const localBin = path.dirname(KIMI_BIN)
       if (!env.PATH?.includes(localBin)) {
         env.PATH = `${localBin}:${env.PATH || ''}`
       }

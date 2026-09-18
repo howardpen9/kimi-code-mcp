@@ -41,7 +41,25 @@ export interface KimiResult {
   modelObserved?: string
 }
 
-const KIMI_BIN = path.join(os.homedir(), '.local/bin/kimi')
+// The kimi-code installer puts the binary in ~/.kimi-code/bin, while older kimi-cli
+// installs land in ~/.local/bin. Probe the known locations instead of hardcoding one;
+// an explicit KIMI_BIN always wins.
+function resolveKimiBin(): string {
+  const candidates = [
+    process.env.KIMI_BIN,
+    path.join(os.homedir(), '.kimi-code/bin/kimi'),
+    path.join(os.homedir(), '.local/bin/kimi'),
+    '/opt/homebrew/bin/kimi',
+    '/usr/local/bin/kimi',
+  ].filter((p): p is string => Boolean(p))
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate
+  }
+  return candidates[candidates.length - 1]
+}
+
+export const KIMI_BIN = resolveKimiBin()
 
 export function isKimiInstalled(): boolean {
   return fs.existsSync(KIMI_BIN)
@@ -66,6 +84,55 @@ function kimiEnv(): NodeJS.ProcessEnv {
     env.PATH = `${localBin}:${env.PATH || ''}`
   }
   return env
+}
+
+let helpTextCache: string | undefined
+
+/** `kimi --help` output, read once per process. Empty string when it cannot be read. */
+function kimiHelpText(): string {
+  if (helpTextCache !== undefined) return helpTextCache
+  try {
+    helpTextCache = execFileSync(KIMI_BIN, ['--help'], {
+      encoding: 'utf-8',
+      timeout: 5000,
+      env: kimiEnv(),
+    })
+  } catch {
+    helpTextCache = ''
+  }
+  return helpTextCache
+}
+
+/**
+ * Whether the installed CLI accepts a flag.
+ *
+ * kimi-code 0.28 dropped `--print`, `--final-message-only`, `-w` and `--no-thinking`;
+ * passing any of them now aborts the run with `error: unknown option`. Older kimi-cli
+ * builds still need `--print` to leave interactive mode, so the flags are probed rather
+ * than hardcoded. An unreadable help text is treated as the modern CLI.
+ */
+export function cliSupportsFlag(flag: string, helpText = kimiHelpText()): boolean {
+  return new RegExp(`(^|[\\s,])${flag.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}([\\s,=]|$)`, 'm').test(helpText)
+}
+
+/** Build the argv for a one-shot CLI run, including only flags this CLI understands. */
+export function buildKimiArgs(
+  opts: { prompt: string; modelAlias?: string; sessionId?: string; workDir?: string; thinking?: boolean },
+  supports: (flag: string) => boolean = cliSupportsFlag,
+): string[] {
+  const args: string[] = []
+
+  if (opts.modelAlias) args.push('-m', opts.modelAlias)
+  args.push('-p', opts.prompt)
+  if (supports('--print')) args.push('--print')
+  args.push('--output-format', 'stream-json')
+  if (supports('--final-message-only')) args.push('--final-message-only')
+  // Modern CLIs take the working directory from the spawned process cwd instead.
+  if (opts.workDir && supports('-w')) args.push('-w', opts.workDir)
+  if (opts.sessionId) args.push('-S', opts.sessionId)
+  if (opts.thinking === false && supports('--no-thinking')) args.push('--no-thinking')
+
+  return args
 }
 
 export async function getKimiStatus(): Promise<KimiStatus> {
@@ -129,6 +196,30 @@ export async function getKimiStatus(): Promise<KimiStatus> {
   }
 
   return status
+}
+
+/**
+ * Extract the session id from the CLI's JSONL stream.
+ *
+ * kimi-code >= 0.28 emits it on stdout as a trailing
+ * {"role":"meta","type":"session.resume_hint","session_id":"session_<uuid>"} line,
+ * which the stderr-based patterns below never see (and whose `session_` prefix
+ * their bare-UUID fallback would strip).
+ */
+export function extractSessionIdFromStream(stdout: string): string | undefined {
+  const lines = stdout.trim().split('\n').filter(Boolean)
+
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i].trim()
+    if (!line.startsWith('{')) continue
+    try {
+      const parsed = JSON.parse(line)
+      const id = parsed.session_id ?? parsed.sessionId
+      if (typeof id === 'string' && id) return id
+    } catch { /* not valid JSON, skip */ }
+  }
+
+  return undefined
 }
 
 /**
@@ -216,17 +307,13 @@ export function runKimi(config: KimiRunConfig): Promise<KimiResult> {
   const resolved = resolveModel(config.model)
 
   return new Promise((resolve) => {
-    const args = [
-      '-m', resolved.cliAlias,
-      '-p', prompt,
-      '--print',
-      '--output-format', 'stream-json',
-      '--final-message-only',
-    ]
-
-    if (workDir) args.push('-w', workDir)
-    if (sessionId) args.push('-S', sessionId)
-    if (thinking === false) args.push('--no-thinking')
+    const args = buildKimiArgs({
+      prompt,
+      modelAlias: resolved.cliAlias,
+      sessionId,
+      workDir,
+      thinking,
+    })
 
     const env = kimiEnv()
 
@@ -282,7 +369,7 @@ export function runKimi(config: KimiRunConfig): Promise<KimiResult> {
       }
 
       const parsed = parseKimiOutput(stdout)
-      const extractedSessionId = extractSessionId(stderr)
+      const extractedSessionId = extractSessionIdFromStream(stdout) ?? extractSessionId(stderr)
       const maxChars = config.maxOutputChars ?? 60_000
 
       if (parsed.text.length > maxChars) {
