@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Detect supported CLI flags from `kimi --help`; support Kimi Code 2.x prompt mode
+  without removed `--print`, `--final-message-only`, `--work-dir`, or `--no-thinking` flags.
+- Share the compatible runner with cache warmup and preserve explicit session metadata.
+- Recognize rejected OAuth credentials as an authentication error with a `kimi login` action.
+- Isolate credential-discovery tests from the developer's real home directory.
+- Discover API keys in `~/.kimi-code/config.toml` and accept `KIMI_CODE_API_KEY`
+  / `KIMI_API_KEY` aliases without mixing keys and endpoints across config files.
+- Use the same CLI flag selection in the optional model probe.
+
+### Documentation
+
+- Update both READMEs with Kimi Code 2.x invocation, K3 model overrides,
+  rejected-token recovery, and custom alias changes after re-login.
+
 ## [0.5.0] - 2026-07-17
 
 ### Changed

@@ -27,12 +27,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const root = path.resolve(__dirname, '..')
 
 // Prefer built dist
-let resolveModel, runKimiApi, loadApiAuth, parseProviderListDefault
+let resolveModel, runKimiApi, buildKimiArgs, loadApiAuth, parseProviderListDefault
 try {
   ;({ resolveModel, parseProviderListDefault } = await import(
     path.join(root, 'dist/models.js')
   ))
   ;({ runKimiApi, loadApiAuth } = await import(path.join(root, 'dist/kimi-api.js')))
+  ;({ buildKimiArgs } = await import(path.join(root, 'dist/kimi-runner.js')))
 } catch {
   console.error('Build first: npm run build')
   process.exit(2)
@@ -107,11 +108,11 @@ if (!auth) {
 // 3) optional CLI -m
 if (wantCli) {
   console.log('CLI -m probe…')
-  const r = spawnSync(
-    kimiBin,
-    ['-m', resolved.cliAlias, '-p', 'Say only: pong', '--output-format', 'text'],
-    { encoding: 'utf-8', timeout: 120_000 },
-  )
+  const help = spawnSync(kimiBin, ['--help'], { encoding: 'utf-8', timeout: 5_000 })
+  const r = help.status === 0
+    ? spawnSync(kimiBin, buildKimiArgs({ model: resolved.cliAlias, prompt: 'Say only: pong' }, help.stdout),
+      { encoding: 'utf-8', timeout: 120_000 })
+    : help
   console.log('CLI exit', r.status, 'stdout:', (r.stdout || '').slice(0, 80))
   if (r.status !== 0) {
     console.log('CLI stderr:', (r.stderr || '').slice(0, 200))

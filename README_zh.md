@@ -12,7 +12,7 @@
 
 ---
 
-MCP 伺服器，將 [Kimi Code](https://www.kimi.com/code)（模型 `kimi-for-coding`，256K 上下文，自動升級）與 [Claude Code](https://docs.anthropic.com/en/docs/claude-code) 串接——Claude 當指揮家，Kimi 負責大量閱讀。
+MCP 伺服器，將 [Kimi Code](https://www.kimi.com/code)（預設 K3 / `k3`，256K 上下文）與 [Claude Code](https://docs.anthropic.com/en/docs/claude-code) 串接——Claude 當指揮家，Kimi 負責大量閱讀。
 
 <div align="center">
   <img src="assets/llm-cost-vs-intelligence.png" alt="LLM 成本 vs 智能 — Kimi Code 以極低成本提供前沿級智能" width="720" />
@@ -80,6 +80,10 @@ cd kimi-code-mcp && npm install && npm run build
 
 在 Claude Code 中執行 `/mcp` 驗證，應該看到 `kimi-code` 和 8 個工具。
 
+MCP 預設使用 `k3`，CLI 呼叫會明確傳入 `-m kimi-code/k3`。
+可透過工具的 `model` 參數或 `KIMICODE_MODEL` / `KIMI_MODEL` 覆寫（參數優先）。
+用 `kimi provider list` 檢查可用別名；CLI 自己的預設模型可能與 MCP 不同。
+
 > [!TIP]
 > **常見用途其實不需要 CLI。** `kimi_query` 和 `kimi_verify` 直接呼叫 Kimi Code API，不需要安裝 Python CLI、也不需要 `kimi login`。只要透過 `$KIMICODE_API_KEY` 或 `~/.kimi/config.toml` 提供 API key（見 [Kimi Code API 設定](#kimi-code-api-設定)）。只有讀取程式碼的工具（`kimi_analyze`、`kimi_resume`)才需要 CLI。完整對照見 [兩種後端：API vs CLI](#兩種後端api-vs-cli)。
 
@@ -122,25 +126,19 @@ cd kimi-code-mcp && npm install && npm run build
 > [!NOTE]
 > **Kimi Code API 和 Moonshot API 是獨立的供應商**——API Key 不互通。
 
-有兩種方式設定 Kimi Code API：
+CLI OAuth 與直連 API 需分別設定：
 
 ### 方式一：OAuth 登入（推薦）
 
-在 Kimi Code CLI Shell 模式下：
+透過 CLI 分析程式碼時，執行：
 
 ```bash
-kimi
+kimi login
 ```
 
-然後輸入 `/login`（或 `/setup`）：
-
-```
-/login
-```
-
-1. 選擇 **Kimi Code** 平台
-2. 瀏覽器自動開啟進行 OAuth 授權
-3. 配置自動儲存至 `~/.kimi/config.toml`
+在瀏覽器完成授權。Kimi Code 2.x 將 OAuth provider 與設定存於
+`~/.kimi-code`；舊版使用 `~/.kimi`。
+用 `kimi provider list` 確認 `kimi-code/k3` 可用。
 
 > [!NOTE]
 > **安裝後出現 `zsh: command not found: kimi`?** 安裝程式把執行檔放在 `~/.local/bin/kimi`,它可能不在你的 `PATH` 裡。加進去(然後重啟 shell 或開新分頁):
@@ -151,6 +149,11 @@ kimi
 
 ### 方式二：手動設定 API Key
 
+API key 依序檢查 `KIMICODE_API_KEY`、`KIMI_CODE_API_KEY`、`KIMI_API_KEY`。
+設定檔依序檢查 `$KIMI_SHARE_DIR/config.toml`（若有設定）、`~/.kimi/config.toml`、
+`~/.kimi-code/config.toml`；`KIMI_BASE_URL` 可覆寫 API endpoint。
+只完成 OAuth 登入不會替直連 API 工具設定 API key。
+
 #### 取得 API Key
 
 1. 前往 [code.kimi.com](https://code.kimi.com)
@@ -158,6 +161,10 @@ kimi
 3. 建立新的 Key（`sk-` 開頭，僅顯示一次）
 
 #### 編輯設定檔
+
+以下範例使用舊版 CLI 設定格式。MCP 也會讀取 `~/.kimi-code/config.toml`
+provider 區段的 `api_key` / `base_url`。只需直連 API 時，設定
+`KIMICODE_API_KEY` 即可；模型表與 CLI 預設值不會決定 MCP 的模型選擇。
 
 ```bash
 nano ~/.kimi/config.toml
@@ -391,19 +398,37 @@ Claude token 成本:  $$$                          $
 
 ### CLI 呼叫參考
 
-MCP 伺服器以非互動（print）模式呼叫 Kimi CLI：
+MCP 先讀取 `kimi --help`，依執行主機的 CLI 支援項目呼叫非互動模式。
+Kimi Code 2.x 的手動呼叫方式：
 
 ```bash
-kimi --work-dir <path> --print -p "<prompt>"
+cd <path>
+kimi -m kimi-code/k3 -p "<prompt>" --output-format stream-json
 ```
 
 | Flag | 用途 |
 |------|------|
-| `--print` | 非互動模式——輸出結果後直接退出（subprocess 必須） |
-| `-p` / `--prompt` | 直接傳入 prompt（跳過互動式 shell） |
-| `--work-dir` / `-w` | 設定 codebase 根目錄 |
+| `-p` / `--prompt` | 執行一次 prompt，跳過互動式 shell |
+| `-m <alias>` | 明確選擇模型（預設 `kimi-code/k3`） |
+| `--output-format stream-json` | 輸出 JSONL assistant/tool 訊息 |
+| 工作目錄（`cwd`） | 指定 subprocess 的 codebase 根目錄 |
 | `-S <id>` | 用 session ID 恢復之前的 session |
-| `--no-thinking` | 關閉 thinking 模式 |
+
+舊版的 `--print`、`--final-message-only`、`--no-thinking` 僅在該 CLI 的 help
+宣告支援時傳入。Kimi Code 2.x 不支援這些 flags 或 `--work-dir`；
+`thinking=false` 因此僅在支援的舊版 CLI 生效。`--plan` 不可與 `-p` 合用。
+
+若回報 `Stored token ... was rejected; re-login required`，執行 `kimi login`。
+本機模型 catalog 檢查不能證明 OAuth 有效或剩餘額度。
+
+重新登入後，`subscription-peer/kimi` 等自訂別名可能消失。
+請用 `kimi provider list` 確認可用別名，更新明確指定的 `model`、
+`KIMICODE_MODEL` 或 `KIMI_MODEL`。MCP 已預設使用官方 `kimi-code/k3`，
+不依賴 helper 的自訂別名。
+
+已用 Kimi Code **2.1.1** 驗證：重新登入後，最小 K3 prompt
+成功回覆 `KIMI_OK`。回歸測試涵蓋新舊版 CLI 參數、session ID 保留、
+認證錯誤與 cache warmup。
 
 > [!NOTE]
 > **`kimi analyze` subcommand 不存在。** MCP tool 命名為 `kimi_analyze`，但底層 CLI 使用上述 flags。如需直接呼叫 Kimi（除錯或腳本用途），請使用以上語法。

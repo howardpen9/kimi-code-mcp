@@ -22,44 +22,64 @@ function interpolateEnv(value: string): string {
 
 /**
  * Load the Kimi Code API key + base URL.
- * Priority: env (KIMICODE_API_KEY / KIMI_BASE_URL) → ~/.kimi/config.toml.
+ * Priority:
+ *   env KIMICODE_API_KEY | KIMI_CODE_API_KEY | KIMI_API_KEY
+ *   + KIMI_BASE_URL
+ *   → ~/.kimi/config.toml → ~/.kimi-code/config.toml
  * The TOML parse is section-aware and prefers the provider whose base_url points
  * at the coding endpoint, falling back to the first key/url found.
  */
 export function loadApiAuth(): KimiApiAuth | null {
-  let apiKey = process.env.KIMICODE_API_KEY || ''
+  let apiKey =
+    process.env.KIMICODE_API_KEY ||
+    process.env.KIMI_CODE_API_KEY ||
+    process.env.KIMI_API_KEY ||
+    ''
   let baseUrl = process.env.KIMI_BASE_URL || ''
 
   if (!apiKey || !baseUrl) {
-    const kimiDir = process.env.KIMI_SHARE_DIR || path.join(os.homedir(), '.kimi')
-    const cfgPath = path.join(kimiDir, 'config.toml')
-    try {
-      const raw = fs.readFileSync(cfgPath, 'utf-8')
-      const providers: Array<{ apiKey?: string; baseUrl?: string }> = []
-      let current: { apiKey?: string; baseUrl?: string } | null = null
-      for (const line of raw.split('\n')) {
-        const trimmed = line.trim()
-        if (trimmed.startsWith('#') || !trimmed) continue
-        const section = trimmed.match(/^\[(.+?)\]/)
-        if (section) {
-          current = section[1].startsWith('providers.') ? {} : null
-          if (current) providers.push(current)
-          continue
+    const home = os.homedir()
+    const cfgPaths = [
+      process.env.KIMI_SHARE_DIR
+        ? path.join(process.env.KIMI_SHARE_DIR, 'config.toml')
+        : '',
+      path.join(home, '.kimi', 'config.toml'),
+      path.join(home, '.kimi-code', 'config.toml'),
+    ].filter(Boolean)
+
+    for (const cfgPath of cfgPaths) {
+      if (apiKey && baseUrl) break
+      try {
+        const raw = fs.readFileSync(cfgPath, 'utf-8')
+        const providers: Array<{ apiKey?: string; baseUrl?: string }> = []
+        let current: { apiKey?: string; baseUrl?: string } | null = null
+        for (const line of raw.split('\n')) {
+          const trimmed = line.trim()
+          if (trimmed.startsWith('#') || !trimmed) continue
+          const section = trimmed.match(/^\[(.+?)\]/)
+          if (section) {
+            current = section[1].startsWith('providers.') ? {} : null
+            if (current) providers.push(current)
+            continue
+          }
+          if (!current) continue
+          const kv = trimmed.match(/^(\w+)\s*=\s*"([^"]*)"/)
+          if (!kv) continue
+          if (kv[1] === 'api_key') current.apiKey = interpolateEnv(kv[2]).trim()
+          else if (kv[1] === 'base_url') current.baseUrl = interpolateEnv(kv[2]).trim()
         }
-        if (!current) continue
-        const kv = trimmed.match(/^(\w+)\s*=\s*"([^"]*)"/)
-        if (!kv) continue
-        if (kv[1] === 'api_key') current.apiKey = kv[2]
-        else if (kv[1] === 'base_url') current.baseUrl = kv[2]
+        const coding = providers.find(p => p.baseUrl?.includes('/coding') && p.apiKey)
+        const chosen = coding || providers.find(p => p.apiKey) || (apiKey ? providers[0] : undefined)
+        if (chosen) {
+          if (!apiKey && chosen.apiKey) apiKey = chosen.apiKey
+          if (!baseUrl && chosen.baseUrl) baseUrl = chosen.baseUrl
+          // Keep a discovered key paired with its own endpoint (or the default).
+          // Never borrow a URL from a different config file on the next pass.
+          if (apiKey) break
+        }
+      } catch {
+        // config optional when env vars are set
       }
-      const coding = providers.find(p => p.baseUrl?.includes('/coding'))
-      const chosen = coding || providers.find(p => p.apiKey) || providers[0]
-      if (chosen) {
-        if (!apiKey && chosen.apiKey) apiKey = chosen.apiKey
-        if (!baseUrl && chosen.baseUrl) baseUrl = chosen.baseUrl
-      }
-    } catch {
-      // config optional when env vars are set
     }
   }
 
@@ -104,7 +124,7 @@ export async function runKimiApi(config: KimiApiConfig): Promise<KimiResult> {
     return {
       ok: false,
       text: '',
-      error: 'Kimi Code API key not found. Set $KIMICODE_API_KEY or add api_key to ~/.kimi/config.toml.',
+      error: 'Kimi Code API key not found. Set $KIMICODE_API_KEY / $KIMI_CODE_API_KEY or api_key in ~/.kimi/config.toml / ~/.kimi-code/config.toml.',
     }
   }
 

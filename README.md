@@ -12,7 +12,7 @@ English | **[中文說明](README_zh.md)**
 
 ---
 
-**Delegate codebase analysis from Claude to Kimi Code (`kimi-for-coding`, 256K) — cut Claude-side token cost ~90%.**
+**Delegate codebase analysis from Claude to Kimi Code (default: K3 / `k3`, 256K) — cut Claude-side token cost ~90%.**
 
 | Task                         | Claude only | Claude + kimi-code-mcp | Claude-side savings |
 |------------------------------|-------------|------------------------|---------------------|
@@ -47,6 +47,11 @@ Add to `.mcp.json` (project-level or `~/.claude/mcp.json` for global):
 ```
 
 Run `/mcp` in Claude Code to verify — you should see `kimi-code` with 8 tools.
+
+The MCP defaults to `k3` and explicitly passes `-m kimi-code/k3` for CLI calls.
+Override it with the tool's `model` argument or `KIMICODE_MODEL` / `KIMI_MODEL`
+(argument takes priority). Run `kimi provider list` to check installed aliases;
+the CLI's own default may differ from the MCP default.
 
 > [!TIP]
 > **You don't need the CLI for the common case.** `kimi_query` and `kimi_verify` call the Kimi Code API directly — no Python CLI install or `kimi login` required. Just provide an API key via `$KIMICODE_API_KEY` or `~/.kimi/config.toml` (see [Kimi Code API Setup](#kimi-code-api-setup)). Only the codebase-reading tools (`kimi_analyze`, `kimi_resume`) need the CLI. See [Two backends: API vs CLI](#two-backends-api-vs-cli) for the full split.
@@ -149,25 +154,19 @@ cd kimi-code-mcp && npm install && npm run build
 > [!NOTE]
 > **Kimi Code API and Moonshot API are separate providers** — their API keys are not interchangeable.
 
-There are two ways to configure the Kimi Code API for the CLI:
+Configure CLI OAuth and direct API access separately:
 
 ### Option 1: OAuth Login (Recommended)
 
-In the Kimi Code CLI shell, run:
+For codebase analysis with the CLI, run:
 
 ```bash
-kimi
+kimi login
 ```
 
-Then use the `/login` (or `/setup`) command:
-
-```
-/login
-```
-
-1. Select **Kimi Code** as the platform
-2. Your browser opens for OAuth authorization
-3. Config is saved automatically to `~/.kimi/config.toml`
+Complete authorization in the browser. Kimi Code 2.x manages its OAuth provider
+and configuration under `~/.kimi-code`; legacy installations use `~/.kimi`.
+Use `kimi provider list` to confirm that `kimi-code/k3` is available.
 
 > [!NOTE]
 > **`zsh: command not found: kimi` after install?** The installer puts the binary at `~/.local/bin/kimi`, which may not be on your `PATH`. Add it (then restart your shell or open a new tab):
@@ -178,6 +177,11 @@ Then use the `/login` (or `/setup`) command:
 
 ### Option 2: Manual API Key Configuration
 
+API key discovery checks `KIMICODE_API_KEY`, `KIMI_CODE_API_KEY`, then `KIMI_API_KEY`.
+Config files are checked in this order: `$KIMI_SHARE_DIR/config.toml` (if set),
+`~/.kimi/config.toml`, then `~/.kimi-code/config.toml`. `KIMI_BASE_URL` overrides
+the API endpoint. OAuth login alone does not configure a key for the direct API tools.
+
 #### Get your API Key
 
 1. Visit [code.kimi.com](https://code.kimi.com)
@@ -185,6 +189,11 @@ Then use the `/login` (or `/setup`) command:
 3. Create a new key (starts with `sk-`, shown only once)
 
 #### Edit config file
+
+The examples below use the legacy CLI config format. The MCP also reads
+`api_key` / `base_url` from provider sections in `~/.kimi-code/config.toml`.
+For direct API access, setting `KIMICODE_API_KEY` is sufficient; model tables
+and CLI defaults do not control the MCP's model selection.
 
 ```bash
 nano ~/.kimi/config.toml
@@ -428,19 +437,38 @@ Under the hood:
 
 ### CLI Invocation Reference
 
-The MCP server calls the Kimi CLI in non-interactive (print) mode:
+The MCP server inspects `kimi --help` and calls the installed CLI in non-interactive mode.
+For Kimi Code 2.x:
 
 ```bash
-kimi --work-dir <path> --print -p "<prompt>"
+cd <path>
+kimi -m kimi-code/k3 -p "<prompt>" --output-format stream-json
 ```
 
 | Flag | Purpose |
 |------|---------|
-| `--print` | Non-interactive mode — outputs result and exits (required for subprocess use) |
-| `-p` / `--prompt` | Pass prompt directly (bypasses interactive shell) |
-| `--work-dir` / `-w` | Set codebase root directory |
+| `-p` / `--prompt` | Run one prompt without the interactive shell |
+| `-m <alias>` | Select the model explicitly (default: `kimi-code/k3`) |
+| `--output-format stream-json` | Emit JSONL assistant/tool messages |
+| Working directory (`cwd`) | Set the codebase root for the subprocess |
 | `-S <id>` | Resume a specific session by ID |
-| `--no-thinking` | Disable thinking mode |
+
+Legacy CLI options `--print`, `--final-message-only`, and `--no-thinking` are sent
+only when advertised by that binary's help. Kimi Code 2.x does not support these
+flags or `--work-dir`; `thinking=false` is therefore only applied on supporting
+legacy CLIs. Do not combine `--plan` with `-p`.
+
+If Kimi reports `Stored token ... was rejected; re-login required`, run `kimi login`.
+Local model catalog checks do not verify OAuth validity or remaining quota.
+
+After re-login, custom aliases such as `subscription-peer/kimi` may disappear.
+Check `kimi provider list` and update any explicit `model`, `KIMICODE_MODEL`, or
+`KIMI_MODEL` override to an available alias. The MCP already defaults to the
+official `kimi-code/k3` alias; it does not require the helper's custom alias.
+
+Validated with Kimi Code **2.1.1**: a minimal K3 prompt returned `KIMI_OK`
+after re-login. Regression tests cover modern and legacy
+CLI flags, resumed session IDs, authentication errors, and cache warmup.
 
 > [!NOTE]
 > There is no `kimi analyze` subcommand. The MCP tool is named `kimi_analyze`, but the underlying CLI uses the flags above. Use this syntax to call Kimi directly for debugging or scripting.

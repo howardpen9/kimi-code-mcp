@@ -12,7 +12,7 @@ export interface KimiRunConfig {
   workDir?: string
   /** Resume a specific session by ID */
   sessionId?: string
-  /** Enable thinking mode for deeper analysis */
+  /** Thinking preference; --no-thinking is used only on CLIs that support it. */
   thinking?: boolean
   /** Timeout in milliseconds (default: 600000) */
   timeoutMs?: number
@@ -154,7 +154,7 @@ export function extractSessionId(stderr: string): string | undefined {
 }
 
 /**
- * Parse Kimi's stream-json output with --final-message-only.
+ * Parse Kimi's stream-json output (legacy final-message-only or 2.x JSONL).
  * The output is one JSON line: {"role":"assistant","content":...}
  * content can be a string or an array of {type, text/think} objects.
  */
@@ -211,24 +211,35 @@ export function truncateAtBoundary(text: string, maxChars: number): string {
     `Use \`kimi_resume\` with the same session to ask follow-up questions about specific sections.`
 }
 
+/** Select optional flags from this binary's help, rather than guessing by version. */
+export function buildKimiArgs(config: KimiRunConfig, help: string): string[] {
+  const supports = (flag: string) => new RegExp(`(?:^|\\s)${flag}(?=[\\s,=<]|$)`, 'm').test(help)
+  const args = ['-m', resolveModel(config.model).cliAlias, '-p', config.prompt,
+    '--output-format', 'stream-json']
+  // Kimi Code 2.x makes -p non-interactive on its own and removed these flags.
+  if (supports('--print')) args.push('--print')
+  if (supports('--final-message-only')) args.push('--final-message-only')
+  if (config.sessionId) args.push('-S', config.sessionId)
+  if (config.thinking === false && supports('--no-thinking')) args.push('--no-thinking')
+  // cwd works on both CLI generations; 2.x no longer accepts -w/--work-dir.
+  return args
+}
+
 export function runKimi(config: KimiRunConfig): Promise<KimiResult> {
-  const { prompt, workDir, sessionId, thinking, timeoutMs = 300_000 } = config
+  const { workDir, sessionId, timeoutMs = 300_000 } = config
   const resolved = resolveModel(config.model)
 
   return new Promise((resolve) => {
-    const args = [
-      '-m', resolved.cliAlias,
-      '-p', prompt,
-      '--print',
-      '--output-format', 'stream-json',
-      '--final-message-only',
-    ]
-
-    if (workDir) args.push('-w', workDir)
-    if (sessionId) args.push('-S', sessionId)
-    if (thinking === false) args.push('--no-thinking')
-
     const env = kimiEnv()
+    let args: string[]
+    try {
+      const help = execFileSync(KIMI_BIN, ['--help'], { encoding: 'utf-8', timeout: 5000, env })
+      args = buildKimiArgs(config, help)
+    } catch {
+      resolve({ ok: false, text: '', error: 'Unable to inspect Kimi CLI options. Check kimi --help and installation.',
+        model: resolved.id, modelRequested: resolved.cliAlias })
+      return
+    }
 
     const proc = spawn(KIMI_BIN, args, {
       env,
@@ -261,7 +272,7 @@ export function runKimi(config: KimiRunConfig): Promise<KimiResult> {
 
       if (code !== 0) {
         // Check for common errors
-        if (stderr.includes('login') || stderr.includes('authenticate')) {
+        if (/\b(?:re-?login|login|authenticate|authentication|unauthorized)\b/i.test(stderr)) {
           resolve({
             ok: false,
             text: '',
@@ -282,7 +293,7 @@ export function runKimi(config: KimiRunConfig): Promise<KimiResult> {
       }
 
       const parsed = parseKimiOutput(stdout)
-      const extractedSessionId = extractSessionId(stderr)
+      const extractedSessionId = sessionId || extractSessionId(stderr) || extractJsonSessionId(stdout)
       const maxChars = config.maxOutputChars ?? 60_000
 
       if (parsed.text.length > maxChars) {
@@ -329,4 +340,17 @@ export function runKimi(config: KimiRunConfig): Promise<KimiResult> {
       }
     })
   })
+}
+
+/** Read only explicit session metadata, never UUIDs quoted inside an answer. */
+export function extractJsonSessionId(stdout: string): string | undefined {
+  for (const line of stdout.split('\n')) {
+    try {
+      const item = JSON.parse(line)
+      if (item.role === 'assistant' || item.role === 'tool') continue
+      const id = item.session_id || item.sessionId || item.metadata?.session_id
+      if (typeof id === 'string' && id) return id
+    } catch { /* not a JSON metadata line */ }
+  }
+  return undefined
 }

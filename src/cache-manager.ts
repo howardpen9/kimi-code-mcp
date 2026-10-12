@@ -10,8 +10,8 @@
 
 import * as fs from 'fs'
 import * as path from 'path'
-import { spawn } from 'child_process'
 import { createHash } from 'crypto'
+import { runKimi } from './kimi-runner.js'
 
 /** Configuration options for CacheManager */
 export interface CacheManagerConfig {
@@ -207,96 +207,16 @@ export class CacheManager {
 
     this.log(`Warming cache for: ${workDir}`)
 
-    const KIMI_BIN = path.join(process.env.HOME || '', '.local/bin/kimi')
-    
-    // Use a lightweight warmup prompt that loads context without heavy processing
-    const warmupPrompt = `Please read and index this codebase structure for efficient querying.
+    // Share the main runner's CLI capability detection and session parsing.
+    const result = await runKimi({
+      prompt: `Please read and index this codebase structure for efficient querying.
 This is a cache warming request - focus on loading files into context.
-Acknowledge when you've loaded the main files (no detailed analysis needed).`
-
-    const args = [
-      '-p', warmupPrompt,
-      '--print',
-      '--output-format', 'stream-json',
-      '--final-message-only',
-      '-w', workDir,
-    ]
-
-    if (!thinking) args.push('--no-thinking')
-
-    return new Promise((resolve, reject) => {
-      const env = { ...process.env }
-      const localBin = path.join(process.env.HOME || '', '.local/bin')
-      if (!env.PATH?.includes(localBin)) {
-        env.PATH = `${localBin}:${env.PATH || ''}`
-      }
-
-      const proc = spawn(KIMI_BIN, args, {
-        env,
-        stdio: ['ignore', 'pipe', 'pipe'],
-        cwd: workDir,
-      })
-
-      let stdout = ''
-      let stderr = ''
-      let sessionId: string | undefined
-
-      proc.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString() })
-      proc.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString() })
-
-      const timer = setTimeout(() => {
-        proc.kill('SIGTERM')
-        setTimeout(() => {
-          if (!proc.killed) proc.kill('SIGKILL')
-        }, 5000)
-        reject(new Error(`Cache warmup timed out after ${timeoutMs}ms`))
-      }, timeoutMs)
-
-      proc.on('close', (code) => {
-        clearTimeout(timer)
-
-        if (code !== 0) {
-          reject(new Error(`Cache warmup failed: ${stderr || `exit code ${code}`}`))
-          return
-        }
-
-        // Extract session ID from stdout (Kimi outputs it in the JSON)
-        sessionId = this.extractSessionId(stdout)
-        this.log(`Warmup complete, session: ${sessionId}`)
-        resolve(sessionId)
-      })
-
-      proc.on('error', (err) => {
-        clearTimeout(timer)
-        reject(err)
-      })
+Acknowledge when you've loaded the main files (no detailed analysis needed).`,
+      workDir, thinking, timeoutMs,
     })
-  }
-
-  /**
-   * Extract session ID from Kimi's output.
-   * The session ID is typically in the JSON response or can be parsed from logs.
-   */
-  private extractSessionId(stdout: string): string | undefined {
-    // Try to find session ID in JSON output
-    const lines = stdout.trim().split('\n').filter(Boolean)
-    
-    for (const line of lines) {
-      try {
-        const parsed = JSON.parse(line)
-        // Check various possible locations for session ID
-        if (parsed.session_id) return parsed.session_id
-        if (parsed.metadata?.session_id) return parsed.metadata.session_id
-      } catch { /* not JSON, skip */ }
-    }
-
-    // Fallback: Kimi may output session ID in a specific format
-    const sessionMatch = stdout.match(/session[_-]?id[":\s]+([a-f0-9-]{36})/i)
-    if (sessionMatch) return sessionMatch[1]
-
-    // If we can't extract session ID, we'll need to list sessions to find it
-    // This is a fallback mechanism
-    return undefined
+    if (!result.ok) throw new Error(`Cache warmup failed: ${result.error}`)
+    this.log(`Warmup complete, session: ${result.sessionId}`)
+    return result.sessionId
   }
 
   /**

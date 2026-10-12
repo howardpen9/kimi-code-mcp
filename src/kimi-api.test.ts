@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
@@ -6,8 +6,16 @@ import { loadApiAuth, isApiConfigured } from './kimi-api.js'
 
 const SAVED_ENV = { ...process.env }
 
+// Credential discovery must never read the developer's real home in a test.
+vi.mock('os', async (importOriginal) => ({
+  ...await importOriginal<typeof import('os')>(),
+  homedir: vi.fn(() => '/tmp/kimi-test-home'),
+}))
+
 function clearKimiEnv() {
   delete process.env.KIMICODE_API_KEY
+  delete process.env.KIMI_CODE_API_KEY
+  delete process.env.KIMI_API_KEY
   delete process.env.KIMI_BASE_URL
   delete process.env.KIMI_SHARE_DIR
 }
@@ -17,6 +25,7 @@ describe('loadApiAuth', () => {
 
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kimi-api-test-'))
+    vi.mocked(os.homedir).mockReturnValue(tmpDir)
     clearKimiEnv()
   })
 
@@ -40,6 +49,31 @@ describe('loadApiAuth', () => {
     const auth = loadApiAuth()
     expect(auth?.apiKey).toBe('sk-from-env')
     expect(auth?.baseUrl).toBe('https://env.example/v1')
+  })
+
+  it.each(['KIMI_CODE_API_KEY', 'KIMI_API_KEY'])('accepts the %s environment alias', (key) => {
+    process.env[key] = 'sk-env-alias'
+    expect(loadApiAuth()).toEqual({ apiKey: 'sk-env-alias', baseUrl: 'https://api.kimi.com/coding/v1' })
+    process.env.KIMICODE_API_KEY = 'sk-preferred'
+    expect(loadApiAuth()?.apiKey).toBe('sk-preferred')
+  })
+
+  it('reads the modern ~/.kimi-code config when the legacy config is absent', () => {
+    const modernDir = path.join(tmpDir, '.kimi-code')
+    fs.mkdirSync(modernDir)
+    fs.writeFileSync(path.join(modernDir, 'config.toml'),
+      '[providers.kimi-code]\nbase_url = "https://api.kimi.com/coding/v1"\napi_key = "sk-modern"\n')
+    expect(loadApiAuth()).toEqual({ apiKey: 'sk-modern', baseUrl: 'https://api.kimi.com/coding/v1' })
+  })
+
+  it('does not pair a modern key with a keyless legacy provider endpoint', () => {
+    fs.mkdirSync(path.join(tmpDir, '.kimi'))
+    fs.mkdirSync(path.join(tmpDir, '.kimi-code'))
+    fs.writeFileSync(path.join(tmpDir, '.kimi', 'config.toml'),
+      '[providers.old]\nbase_url = "https://old.example/v1"\n')
+    fs.writeFileSync(path.join(tmpDir, '.kimi-code', 'config.toml'),
+      '[providers.kimi-code]\nbase_url = "https://api.kimi.com/coding/v1"\napi_key = "sk-modern"\n')
+    expect(loadApiAuth()).toEqual({ apiKey: 'sk-modern', baseUrl: 'https://api.kimi.com/coding/v1' })
   })
 
   it('reads api_key and base_url from config.toml', () => {
