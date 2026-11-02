@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Update both READMEs with Kimi Code 2.x invocation, K3 model overrides,
   rejected-token recovery, and custom alias changes after re-login.
+- Align install, login, model ids, and Claude Code MCP config with Kimi Code CLI
+  2.4.1 (default `k3` / `kimi-code/k3`; `kimi-for-coding` is K2.8 Preview).
+  Document that this server still launches `~/.local/bin/kimi` and reads legacy
+  `~/.kimi` session and credential paths.
 
 ## [0.5.0] - 2026-07-17
 

@@ -5,14 +5,14 @@
 ---
 
 <div align="center">
-  <img src="assets/token-savings-hero.png" alt="kimi-code-mcp — 把批量讀碼交給 Kimi Code(256K 上下文),Claude 端 token 成本省約 90%" width="760" />
+  <img src="assets/token-savings-hero.png" alt="圖表：kimi-code-mcp，Claude Code × kimi-for-coding（K2.7，256K），三個範例任務的 Claude 端 token 約少 90%" width="760" />
   <br />
-  <sub>示意估算。這個 ~90% 是 <b>Claude 端</b> 在分析密集任務上的 token 減少 —— <b>不是</b>總成本歸零:Kimi 自己的<a href="https://www.kimi.com/code/en">訂閱費</a>照算。monorepo 那列對應下方實際舉例,PDF/commits 兩列為粗略示意。</sub>
+  <sub>示意估算。這個 ~90% 是 <b>Claude 端</b> 在分析密集任務上的 token 減少 —— <b>不是</b>總成本歸零:Kimi 自己的<a href="https://www.kimi.com/code/en">訂閱費</a>照算。monorepo 那列對應下方實際舉例,PDF/commits 兩列為粗略示意。圖上仍寫 <code>kimi-for-coding</code>（K2.7，256K）。本伺服器預設模型 id 是 <code>k3</code>（CLI 別名 <code>kimi-code/k3</code>）。</sub>
 </div>
 
 ---
 
-MCP 伺服器，將 [Kimi Code](https://www.kimi.com/code)（預設 K3 / `k3`，256K 上下文）與 [Claude Code](https://docs.anthropic.com/en/docs/claude-code) 串接——Claude 當指揮家，Kimi 負責大量閱讀。
+MCP 伺服器，將 [Kimi Code](https://www.kimi.com/code)（預設模型 `k3`，CLI 別名 `kimi-code/k3`）與 [Claude Code](https://code.claude.com/docs/en/mcp) 串接——Claude 當指揮家，Kimi 負責大量閱讀。
 
 <div align="center">
   <img src="assets/llm-cost-vs-intelligence.png" alt="LLM 成本 vs 智能 — Kimi Code 以極低成本提供前沿級智能" width="720" />
@@ -21,33 +21,67 @@ MCP 伺服器，將 [Kimi Code](https://www.kimi.com/code)（預設 K3 / `k3`，
 </div>
 
 > [!TIP]
-> **別再花 Claude 的錢讀檔了。** Kimi Code 以極低成本提供前沿級程式碼智能（見上圖）。把批量程式碼掃描交給 Kimi（256K 上下文，幾乎零成本），讓 Claude 專注它最擅長的——推理、決策、精準改碼。一次 `kimi_analyze` 呼叫可以取代 50+ 次檔案讀取，**分析密集型任務省下 60-80% 的 Claude token 成本。**
+> **別再花 Claude 的錢讀檔了。** Kimi Code 以極低成本提供前沿級程式碼智能（見上圖）。把批量程式碼掃描交給 Kimi，讓 Claude 專注推理、決策、精準改碼。一次 `kimi_analyze` 呼叫可以取代 50+ 次檔案讀取。上方圖表的 ~90% 是 Claude 端示意，分析密集型任務常見約 60-80%（見 [Token 經濟學](#token-經濟學)）。
 
 ## 什麼是 Kimi Code？
 
-[**Kimi Code**](https://www.kimi.com/code/en) 是 Moonshot AI 推出的 AI 程式碼代理。模型 ID `kimi-for-coding`（1T MoE，256K 上下文）由後端自動升級，無需鎖版本。支援終端機、IDE、CLI 多平台——自主撰寫、除錯、重構、分析程式碼。
+[**Kimi Code**](https://www.kimi.com/code/en) 是 Moonshot AI 的程式碼代理（終端機、IDE，以及 [Kimi Code CLI](https://www.kimi.com/code/docs/en/kimi-code-cli/guides/getting-started.html)）。CLI 是 TypeScript 套件 `@moonshot-ai/kimi-code`。公開文件目前列到 CLI **2.4.1**（2026-10-30）。它會讀寫程式碼、跑 shell、搜尋檔案、抓網頁。
 
-核心規格：
-- **256K token 上下文** — 一次讀完整個 codebase
-- **平行 Agent 派生** — 同時處理多個任務
-- **Shell、檔案、網路存取** — 完整開發工具鏈
-- **安裝**：`curl -L code.kimi.com/install.sh | bash`
+下表的模型 id 來自 [Kimi Code 模型頁](https://www.kimi.com/code/docs/en/kimi-code/models.html)，別名前綴來自 CLI 2.4.1（managed provider 為 `kimi-code/<id>`）。上下文視方案而定（「最多」）。
+
+| 模型 ID | CLI 別名 | 是什麼 | 上下文 |
+|---------|----------|--------|--------|
+| `k3` | `kimi-code/k3` | K3。**本 MCP 的預設。** | 最多 1,048,576 |
+| `k3-256k` | `kimi-code/k3-256k` | K3 的 256K 視窗 | 262,144 |
+| `k3.1-pro` | `kimi-code/k3.1-pro` | K3.1 Pro（3T 級，只能開 thinking） | 最多 1,048,576 |
+| `k3.1-pro-highspeed` | `kimi-code/k3.1-pro-highspeed` | 同模型、更快，額度約 2 倍 | 最多 1,048,576 |
+| `kimi-for-coding` | `kimi-code/kimi-for-coding` | K2.8 Preview | 最多 1,048,576 |
+| `kimi-for-coding-highspeed` | `kimi-code/kimi-for-coding-highspeed` | K2.7 Code Highspeed | 262,144 |
+
+本伺服器只改寫下面這張別名表，其餘字串原樣轉發：
+
+| 你傳入 | API `model` | CLI `-m` |
+|--------|-------------|----------|
+| `k3`、`kimi-code/k3`、`kimi-k3` | `k3` | `kimi-code/k3` |
+| `kimi-for-coding`、`kimi-code/kimi-for-coding`、`k2.7` | `kimi-for-coding` | `kimi-code/kimi-for-coding` |
+| 其他（`k3-256k`、`k3.1-pro`、`kimi-code/k3.1-pro`…） | 原字串 | 同一個原字串 |
+
+`k2.7` 是舊捷徑，仍會送出 `kimi-for-coding`（現在是 K2.8 Preview），不是 `kimi-for-coding-highspeed`。API 要裸 id，CLI 要 `kimi-code/<id>`。不在表內的 id，同一個 `model` 參數無法同時滿足兩邊。登入後用 `kimi provider list` 或 `/model` 確認；重新登入可能清掉自訂別名。
 
 > [!WARNING]
-> **需要 Kimi Code 會員。** 所有工具最終都會打到 Kimi Code，需要有效的 [Kimi Code 訂閱方案](https://www.kimi.com/code/en)。API 工具（`kimi_query`、`kimi_verify`)用 **API key** 認證;讀取程式碼的工具（`kimi_analyze`、`kimi_resume`)額外需要 **安裝 CLI + `kimi login`**。最新方案、額度與並發上限請見 [kimi.com/code](https://www.kimi.com/code/en)。
+> **需要 Kimi Code 會員。** API 工具（`kimi_query`、`kimi_verify`）要 **API key**。讀 codebase 的工具（`kimi_analyze`、`kimi_resume`）要 **CLI 在 `~/.local/bin/kimi`，並且 `kimi login`**。方案與額度見 [kimi.com/code](https://www.kimi.com/code/en)。
 
 ## 快速開始
 
 ```bash
-# 1. 安裝 Kimi CLI 並登入
-curl -L code.kimi.com/install.sh | bash
+# 1. 安裝目前的 Kimi Code CLI（macOS / Linux）並登入。
+#    code.kimi.com/install.sh 會轉到已封存的 Python kimi-cli，不要用。
+curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash
 kimi login
 
-# 2. 透過 npm 安裝
+# Node.js >= 22.19.0 的替代：
+# npm install -g @moonshot-ai/kimi-code
+
+# 本伺服器只執行 ~/.local/bin/kimi。安裝程式把執行檔放在 ~/.kimi-code/bin。
+mkdir -p "$HOME/.local/bin"
+ln -sfn "$HOME/.kimi-code/bin/kimi" "$HOME/.local/bin/kimi"
+
+# 2. 安裝這個 MCP（Node.js >= 18）
 npm install -g kimi-mcp-server
 ```
 
-在 `.mcp.json`（專案目錄或 `~/.claude/mcp.json` 全域）加入：
+> [!WARNING]
+> 2026-11-02 查過，npm 上只有 `kimi-mcp-server@0.3.0`。Git `main` 是 0.5.0，尚未發布，所以 `npm install -g` 還不會預設 `k3`，也不會讀 `~/.kimi-code/config.toml`。要這頁描述的行為，在 0.5.0 發布前請從原始碼建置。
+
+Windows（PowerShell）：`irm https://code.kimi.com/kimi-code/install.ps1 | iex`。這個 repo 的 runner 仍寫死 POSIX 路徑 `~/.local/bin/kimi`，請把安裝好的 `kimi` 連到那裡。
+
+專案範圍：把 `.mcp.json` commit 在 repo 根目錄。使用者範圍存在 `~/.claude.json`，不是 `~/.claude/mcp.json`：
+
+```bash
+claude mcp add --scope user --transport stdio kimi-code -- npx -y kimi-mcp-server
+```
+
+專案 `.mcp.json`：
 
 ```json
 {
@@ -80,12 +114,12 @@ cd kimi-code-mcp && npm install && npm run build
 
 在 Claude Code 中執行 `/mcp` 驗證，應該看到 `kimi-code` 和 8 個工具。
 
-MCP 預設使用 `k3`，CLI 呼叫會明確傳入 `-m kimi-code/k3`。
+MCP 預設使用 `k3`，CLI 呼叫會傳入 `-m kimi-code/k3`。
 可透過工具的 `model` 參數或 `KIMICODE_MODEL` / `KIMI_MODEL` 覆寫（參數優先）。
-用 `kimi provider list` 檢查可用別名；CLI 自己的預設模型可能與 MCP 不同。
+CLI 2.4.1 在有設預設時，`kimi provider list` 會印出 `Default model: …`，那個值可以跟 MCP 不同。在 CLI 裡用 `/model` 切換。
 
 > [!TIP]
-> **常見用途其實不需要 CLI。** `kimi_query` 和 `kimi_verify` 直接呼叫 Kimi Code API，不需要安裝 Python CLI、也不需要 `kimi login`。只要透過 `$KIMICODE_API_KEY` 或 `~/.kimi/config.toml` 提供 API key（見 [Kimi Code API 設定](#kimi-code-api-設定)）。只有讀取程式碼的工具（`kimi_analyze`、`kimi_resume`)才需要 CLI。完整對照見 [兩種後端：API vs CLI](#兩種後端api-vs-cli)。
+> **常見用途其實不需要 CLI。** `kimi_query` 和 `kimi_verify` 直接呼叫 Kimi Code API，不需要安裝 CLI，也不需要 `kimi login`。設好 `$KIMICODE_API_KEY` 即可（見 [Kimi Code API 設定](#kimi-code-api-設定)）。只有 `kimi_analyze` 和 `kimi_resume` 會啟動 CLI。完整對照見 [兩種後端：API vs CLI](#兩種後端api-vs-cli)。
 
 ## 兩種後端：API vs CLI
 
@@ -93,21 +127,21 @@ MCP 預設使用 `k3`，CLI 呼叫會明確傳入 `-m kimi-code/k3`。
 
 | 後端 | 怎麼連 Kimi | 需要什麼 | 看得到你的 codebase 嗎? |
 |------|------------|---------|------------------------|
-| **直連 API** | HTTPS 打 `api.kimi.com/coding/v1` | 只要一把 API key（`$KIMICODE_API_KEY` 或 `~/.kimi/config.toml`) | ❌ 不行 — 由你把 context 貼進去 |
-| **本機 CLI** | 以子行程啟動 `kimi` 執行檔 | CLI 已安裝 **且** 完成 `kimi login` | ✅ 可以 — 直接從磁碟讀檔 |
+| **直連 API** | HTTPS 打 `api.kimi.com/coding/v1`（或 `KIMI_BASE_URL`） | API key（`$KIMICODE_API_KEY`，或 `~/.kimi/config.toml` / `~/.kimi-code/config.toml` 裡的 `api_key`） | ❌ 不行 — 由你把 context 貼進去 |
+| **本機 CLI** | 執行 `~/.local/bin/kimi` | 該路徑有執行檔 **且** 完成 `kimi login` | ✅ 可以 — 直接從磁碟讀檔 |
 
 | 工具 | 後端 | 原因 |
 |------|------|------|
 | `kimi_query` | **API**(沒設 key 時才退回 CLI) | 無上下文問答 — 不需 codebase,API 最簡單且無 login 依賴 |
 | `kimi_verify` | **API** | 你把程式碼/diff/論點直接貼進去,Kimi 以獨立第三方身分判斷 |
-| `kimi_analyze` | **CLI** | 必須從磁碟讀整個 codebase(256K 上下文) |
+| `kimi_analyze` | **CLI** | 從磁碟讀 codebase。上下文跟模型視窗走，不是固定 256K |
 | `kimi_resume` | **CLI** | 接續一個保有先前 codebase 上下文的 CLI session |
-| `kimi_list_sessions`、`kimi_cache_*`、`kimi_status` | 本機 | 讀本機 session/快取的元資料 |
+| `kimi_list_sessions`、`kimi_cache_*`、`kimi_status` | 本機 | 讀本機快取；session 清單只看舊版 `~/.kimi` |
 
 > [!IMPORTANT]
 > **多數使用者只需要 API key。** 如果你只是要第二意見/驗證(`kimi_query`、`kimi_verify`),設好 API key 就完成了 — 完全不用碰 CLI。只有當你想讓 Kimi 透過 `kimi_analyze` / `kimi_resume` 讀你的 codebase 時,才需要安裝 + `kimi login`。
 
-隨時執行 **`kimi_status`** 就能看到哪些後端是活的 — 它會分別回報 API 設定狀態與 CLI 安裝/認證狀態。
+隨時執行 **`kimi_status`** 看 API 是否設了 key，以及 `~/.local/bin/kimi` 的版本。CLI 認證探測只看 `~/.kimi`（見下方說明），所以現代登入成功仍可能顯示未認證。這不影響 API 工具。
 
 ## 給 Agent 的使用準則
 
@@ -116,136 +150,68 @@ MCP 預設使用 `k3`，CLI 呼叫會明確傳入 `-m kimi-code/k3`。
 - **提交前交叉檢查自己的工作 → `kimi_verify`。** 貼上實際的 diff/程式碼/論點,**外加周邊 context**(目標、限制、函式簽名)。Kimi 只看得到 `context` 字串 — 沒有 repo、沒有 session 歷史。Context 含糊 → 審查無用。
 - **快速、與模型無關的程式問題 → `kimi_query`。** 不需 codebase,回傳另一個模型的觀點。
 - **需要理解大型/陌生的 codebase → `kimi_analyze`**(帶 `work_dir`)。優先用這個,別自己讀 50 個檔案;它省下約 10× 的 Claude token。需要 CLI 已安裝並登入。
-- **analyze 後想深入 → `kimi_resume`**(帶回傳的 `session_id`,保留最多 256K token 的先前上下文)。
-- **不知道 Kimi 為何失敗 → 先 `kimi_status`。** CLI 顯示「未認證」**不影響** `kimi_query`/`kimi_verify`(那兩個走 API)。
-- **輸出保持精簡。** 了解狀況預設用 `detail_level: summary`;需要程式碼片段才提高到 `normal`/`detailed`。輸出越大,Claude token 越多,就失去意義了。
+- **analyze 後想深入 → `kimi_resume`**（帶回傳的 `session_id`。上下文是該 session 的模型視窗，不是固定 256K）。
+- **不知道 Kimi 為何失敗 → 先 `kimi_status`。** CLI 顯示「未認證」**不影響** `kimi_query`/`kimi_verify`（那兩個走 API）。現代 CLI 的 OAuth 在 `~/.kimi-code`，`kimi_status` 可能誤報未認證。
+- **輸出保持精簡。** 工具預設是 `detail_level: normal`。只要概覽就傳 `summary`；需要程式碼片段才用 `detailed`。輸出越大，Claude token 越多。
 - **小型/單檔工作別用 Kimi** — 10 個檔案以下,Claude 直接讀更快。
 
 ## Kimi Code API 設定
 
 > [!NOTE]
-> **Kimi Code API 和 Moonshot API 是獨立的供應商**——API Key 不互通。
+> **Kimi Code 和 Kimi Platform（Moonshot）是分開的。** Coding plan 的 id（`k3`、`kimi-for-coding`）不是 Platform id（`kimi-k3`、`kimi-k3.1-pro`）。`kimi-k2-0905-preview` 已停用。Key 不互通。
 
-CLI OAuth 與直連 API 需分別設定：
+CLI 登入和直連 API key 是兩件事。`kimi login` 不會給 `kimi_query` / `kimi_verify` 一把 key。
 
-### 方式一：OAuth 登入（推薦）
-
-透過 CLI 分析程式碼時，執行：
+### 方式一：OAuth 登入（CLI 工具）
 
 ```bash
 kimi login
 ```
 
-在瀏覽器完成授權。Kimi Code 2.x 將 OAuth provider 與設定存於
-`~/.kimi-code`；舊版使用 `~/.kimi`。
-用 `kimi provider list` 確認 `kimi-code/k3` 可用。
+這是 device-code 流程（跟 TUI 裡的 `/login` 同一套憑證）。CLI 把設定、session、OAuth 寫在 `~/.kimi-code/`（可用 `KIMI_CODE_HOME` 改目錄）。舊資料可能還在 `~/.kimi`。登入後，有設預設時 `kimi provider list` 會印出 `Default model:`，不一定是 `kimi-code/k3`。managed provider id 是 `managed:kimi-code`。
 
 > [!NOTE]
-> **安裝後出現 `zsh: command not found: kimi`?** 安裝程式把執行檔放在 `~/.local/bin/kimi`,它可能不在你的 `PATH` 裡。加進去(然後重啟 shell 或開新分頁):
+> **`command not found: kimi`？** 目前的安裝程式把執行檔放在 `~/.kimi-code/bin/kimi`，並把該目錄加進 shell rc。開新 shell，或 `source` 它印出的 rc。本 MCP **不搜尋 `PATH`**，只執行 `~/.local/bin/kimi`：
 > ```bash
-> echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
+> mkdir -p "$HOME/.local/bin"
+> ln -sfn "$(command -v kimi)" "$HOME/.local/bin/kimi"
 > ```
-> MCP 伺服器是用絕對路徑呼叫執行檔,所以這只影響你自己在終端機跑 `kimi`(例如 `kimi login`)。
+> 用安裝腳本或 `npm install -g @moonshot-ai/kimi-code` 之後都要做這一步。
 
-### 方式二：手動設定 API Key
+### 方式二：API key（直連 API 工具）
 
-API key 依序檢查 `KIMICODE_API_KEY`、`KIMI_CODE_API_KEY`、`KIMI_API_KEY`。
-設定檔依序檢查 `$KIMI_SHARE_DIR/config.toml`（若有設定）、`~/.kimi/config.toml`、
-`~/.kimi-code/config.toml`；`KIMI_BASE_URL` 可覆寫 API endpoint。
-只完成 OAuth 登入不會替直連 API 工具設定 API key。
-
-#### 取得 API Key
-
-1. 前往 [code.kimi.com](https://code.kimi.com)
-2. 登入 → **設定** → **API Keys**
-3. 建立新的 Key（`sk-` 開頭，僅顯示一次）
-
-#### 編輯設定檔
-
-以下範例使用舊版 CLI 設定格式。MCP 也會讀取 `~/.kimi-code/config.toml`
-provider 區段的 `api_key` / `base_url`。只需直連 API 時，設定
-`KIMICODE_API_KEY` 即可；模型表與 CLI 預設值不會決定 MCP 的模型選擇。
+在 [Kimi Code console](https://www.kimi.com/code/console) 建立 key。MCP 依序讀 `KIMICODE_API_KEY`、`KIMI_CODE_API_KEY`、`KIMI_API_KEY`。`KIMI_BASE_URL` 可改 endpoint（預設 `https://api.kimi.com/coding/v1`；海外 coding host 是 `https://api.kimi.ai/coding/v1`）。
 
 ```bash
-nano ~/.kimi/config.toml
+# ~/.zshrc 或 ~/.bashrc — 必須是 Claude 啟動 MCP 時看得到的環境，不是只在互動 shell
+export KIMICODE_API_KEY="sk-你的API密鑰"
+# export KIMI_BASE_URL="https://api.kimi.ai/coding/v1"
 ```
 
-加入：
+CLI **不會**從環境變數讀 `KIMICODE_API_KEY`。CLI 請用 `kimi login`，或在 `~/.kimi-code/config.toml` 設 `api_key` / `api_key_env`。MCP **不讀** `api_key_env`。它解析 TOML 時會展開引號裡的 `${VAR}`。
+
+設定檔順序：`$KIMI_SHARE_DIR/config.toml`（有設才看）、`~/.kimi/config.toml`、`~/.kimi-code/config.toml`。只用 `[providers.*]` 裡的 `api_key` 和 `base_url`。`default_model` 和 `[models.*]` 不會改 MCP 的模型。
+
+若要把 key 放進檔案而不是環境變數，目前 CLI 的形狀是：
 
 ```toml
-[providers.kimi-code]
+default_model = "kimi-code/k3"
+
+[providers."managed:kimi-code"]
 type = "kimi"
 base_url = "https://api.kimi.com/coding/v1"
 api_key = "sk-你的API密鑰"
-
-[models.kimi-for-coding]
-provider = "kimi-code"
-model = "kimi-for-coding"
-max_context_size = 262144
-capabilities = ["thinking"]
-
-[defaults]
-model = "kimi-for-coding"
 ```
 
-#### 使用環境變數（更安全）
+不要蓋掉 `kimi login` 已經寫好的檔案。登入後 `api_key = ""` 加上 `oauth` 表是正常的，MCP 用不了那把空 key。API 工具請用 `KIMICODE_API_KEY`。
 
-```bash
-# 加入 ~/.zshrc (macOS) 或 ~/.bashrc (Linux)
-export KIMICODE_API_KEY="sk-你的API密鑰"
-```
+### Kimi Code vs Kimi Platform
 
-然後在 `config.toml` 中引用：
-
-```toml
-[providers.kimi-code]
-type = "kimi"
-base_url = "https://api.kimi.com/coding/v1"
-api_key = "${KIMICODE_API_KEY}"
-```
-
-### 多供應商配置範例
-
-可以同時設定 Kimi Code 和 Moonshot：
-
-```toml
-[providers.kimi-code]
-type = "kimi"
-base_url = "https://api.kimi.com/coding/v1"
-api_key = "${KIMICODE_API_KEY}"
-
-[providers.moonshot-cn]
-type = "kimi"
-base_url = "https://api.moonshot.cn/v1"
-api_key = "${MOONSHOT_API_KEY}"
-
-[models.kimi-for-coding]
-provider = "kimi-code"
-model = "kimi-for-coding"
-max_context_size = 262144
-capabilities = ["thinking"]
-
-[models.kimi-k2]
-provider = "moonshot-cn"
-model = "kimi-k2-0905-preview"
-max_context_size = 256000
-capabilities = ["thinking"]
-
-[defaults]
-model = "kimi-for-coding"
-```
-
-隨時用 `/model` 或 `/model kimi-k2` 切換模型。
-
-### Kimi Code vs Moonshot
-
-| 特性 | Kimi Code | Moonshot |
-|------|-----------|----------|
-| 定位 | 專為編程優化 | 通用對話 |
-| Endpoint | `api.kimi.com/coding/v1` | `api.moonshot.cn/v1` |
-| API Key | 獨立申請 — [code.kimi.com](https://code.kimi.com) | 獨立申請 |
-| SearchWeb / FetchURL | 原生支援 | 不支援 |
-| 上下文 | 262K | 256K |
+| | Kimi Code（這個 MCP） | Kimi Platform |
+|--|----------------------|---------------|
+| Endpoint | `https://api.kimi.com/coding/v1`（海外 `https://api.kimi.ai/coding/v1`） | Platform host，不是 coding 路徑 |
+| 模型 id | `k3`、`k3-256k`、`k3.1-pro`、`kimi-for-coding`… | `kimi-k3`、`kimi-k3.1-pro`… |
+| Key | [Kimi Code console](https://www.kimi.com/code/console) | [platform.kimi.ai models](https://platform.kimi.ai/docs/models) |
 
 ## 你可以做什麼
 
@@ -253,18 +219,18 @@ model = "kimi-for-coding"
 
 | 你的 Prompt | 實際發生什麼 |
 |------------|------------|
-| 「分析這個 codebase 的架構」 | Kimi 讀取全部檔案（256K），Claude 根據報告行動 |
+| 「分析這個 codebase 的架構」 | Kimi 讀整棵樹（預設 `k3`），Claude 根據報告行動 |
 | 「掃描安全漏洞，然後審閱 Kimi 的發現」 | Kimi 審計，Claude 交叉審查——AI 結對審查 |
 | 「映射 auth 模組的所有依賴，然後規劃重構」 | Kimi 建構依賴圖，Claude 規劃修改 |
 | 「審閱最近的改動，檢查回歸和邊界情況」 | Kimi 審閱完整上下文（不只是 diff），Claude 整合 |
-| 「恢復上次的 Kimi session，繼續問 API 設計」 | Kimi 跨 session 保留 256K token 上下文 |
+| 「恢復上次的 Kimi session，繼續問 API 設計」 | `kimi_resume` 接續那個 CLI session |
 
 ## 為什麼需要這個？
 
 Claude Code 很強大，但每次讀檔都消耗 token。很多工作——預審大型程式碼庫、跨檔案掃描、生成審計報告——屬於**確定性高的尾部任務**，不需要 Claude 的完整推理能力。
 
 > [!IMPORTANT]
-> **成本算術：** Claude 讀 50 個檔案理解架構 = 昂貴。Kimi 透過 `kimi_analyze` 讀 50 個檔案 = 幾乎免費。Claude 再根據 Kimi 的結構化報告行動 = 最少 token。**分析密集型任務總共省下 60-80% 的 Claude token。**
+> **成本算術：** Claude 讀 50 個檔案理解架構 = 昂貴。Kimi 透過 `kimi_analyze` 讀 50 個檔案 = 走 Kimi 訂閱，不走 Claude token。Claude 再根據報告行動 = 最少 Claude token。**分析密集型任務的 Claude token 大約少 60-80%**（上方圖表的 ~90% 是示意）。
 
 ### 如何省 Token
 
@@ -282,18 +248,18 @@ Claude Code 很強大，但每次讀檔都消耗 token。很多工作——預�
                       └──────┬──────────────┬───────┘
                   精準        │              │  委派
                   編輯        │              │  批量閱讀
-                  (token)    │              │  (免費)
+                  (token)    │              │  (Kimi 方案)
                              ▼              ▼
                       ┌──────────┐   ┌──────────────┐
                       │ 你的     │   │  Kimi Code   │
-                      │ 程式碼庫 │   │  - 256K 上下文│
+                      │ 程式碼庫 │   │  - 模型 k3   │
                       └──────────┘   │  - 通讀全部   │
                                      │  - 回傳報告   │
                                      └──────────────┘
 ```
 
 1. **Claude** 收到你的任務 → 判斷需要理解 codebase
-2. **Claude** 透過 MCP 呼叫 `kimi_analyze` → Kimi 讀取整個程式碼庫（256K 上下文，近零成本）
+2. **Claude** 透過 MCP 呼叫 `kimi_analyze` → Kimi 讀程式碼庫（訂閱費用，不是 Claude token）
 3. **Kimi** 回傳結構化分析
 4. **Claude** 根據分析做精準的程式碼修改
 
@@ -301,9 +267,9 @@ Claude Code 很強大，但每次讀檔都消耗 token。很多工作——預�
 
 ### 基於 Kimi Code 的雙向程式碼審計
 
-`kimi-for-coding` 為 1T MoE 模型，專為深度程式碼理解而設計。這讓 **AI 結對審查** 成為可能：
+預設模型是 `k3`（K3）。這就夠做 **AI 結對審查**：
 
-1. **Kimi 預審** — 256K 上下文一次看完整個 codebase：安全問題、反模式、死代碼、架構問題
+1. **Kimi 預審** — 一次看整棵樹：安全問題、反模式、死代碼、架構問題
 2. **Claude 交叉審查** — 審閱 Kimi 的發現，質疑可疑項目，補充自己的洞察
 3. **雙重視角** — 不同模型捕捉不同問題。一個遺漏的，另一個能發現
 
@@ -328,7 +294,7 @@ Claude Code 很強大，但每次讀檔都消耗 token。很多工作——預�
 | 每週 | 全 codebase 掃描 | 累積的技術債 |
 | 發版前 | 安全導向的全面審計 | 安心發版 |
 
-每次審查 session 都可以**恢復**（`kimi_resume`）—— Kimi 跨 session 保留最多 256K token 的上下文，隨時間累積理解。
+有 CLI session id 時，審查 session 可以用 `kimi_resume` **恢復**。上下文跟該 session 的模型視窗走。
 
 ## 功能
 
@@ -337,9 +303,9 @@ Claude Code 很強大，但每次讀檔都消耗 token。很多工作——預�
 | `kimi_analyze` | **CLI** — 深度程式碼分析（架構、審計、重構建議） | 10 分鐘 |
 | `kimi_query` | **API** — 快速問答，不需要 codebase 上下文（沒設 key 時才走 CLI） | 2 分鐘 |
 | `kimi_verify` | **API** — 獨立第三方驗證程式碼／diff／論點；不需 CLI，需自帶完整 context | 5 分鐘 |
-| `kimi_list_sessions` | 列出現有的 Kimi 分析 session | 即時 |
-| `kimi_resume` | **CLI** — 恢復之前的 session（保留最多 256K token 上下文） | 10 分鐘 |
-| `kimi_status` | 回報 API 設定狀態 + CLI 安裝/版本/認證狀態 | 即時 |
+| `kimi_list_sessions` | 列出舊版 `~/.kimi/sessions`（不是 `~/.kimi-code`） | 即時 |
+| `kimi_resume` | **CLI** — 用 `-S <id>` 恢復 session | 10 分鐘 |
+| `kimi_status` | API key 狀態，以及 `~/.local/bin/kimi` 與 `~/.kimi` 的版本/認證 | 即時 |
 | `kimi_cache_status` | 檢視 session 快取統計與效能指標 | 即時 |
 | `kimi_cache_invalidate` | 手動清除快取 session（指定目錄或全部） | 即時 |
 
@@ -391,15 +357,14 @@ Claude token 成本:  $$$                          $
 ```
 ┌──────────────┐  stdio/MCP   ┌──────────────┐  subprocess   ┌────────────────────┐
 │  Claude Code │ ◄──────────► │ kimi-code-mcp│ ────────────► │ Kimi CLI           │
-│  (指揮家)    │              │ (MCP 伺服器) │               │ (kimi-for-coding,  │
-│              │              │              │               │  256K context)     │
+│  (指揮家)    │              │ (MCP 伺服器) │               │ (k3)               │
 └──────────────┘              └──────────────┘               └────────────────────┘
 ```
 
 ### CLI 呼叫參考
 
-MCP 先讀取 `kimi --help`，依執行主機的 CLI 支援項目呼叫非互動模式。
-Kimi Code 2.x 的手動呼叫方式：
+MCP 執行 `~/.local/bin/kimi`，讀 `kimi --help`，再以非互動模式呼叫。
+下面的 flags 對得上 [Kimi Code CLI 指令參考](https://www.kimi.com/code/docs/en/kimi-code-cli/reference/kimi-command.html)，公開版本到 **2.4.1**（2026-10-30）：
 
 ```bash
 cd <path>
@@ -426,9 +391,11 @@ kimi -m kimi-code/k3 -p "<prompt>" --output-format stream-json
 `KIMICODE_MODEL` 或 `KIMI_MODEL`。MCP 已預設使用官方 `kimi-code/k3`，
 不依賴 helper 的自訂別名。
 
-已用 Kimi Code **2.1.1** 驗證：重新登入後，最小 K3 prompt
-成功回覆 `KIMI_OK`。回歸測試涵蓋新舊版 CLI 參數、session ID 保留、
-認證錯誤與 cache warmup。
+repo 裡的測試固定 **2.1.1** 的 JSONL 形狀（重新登入後，最小 K3 prompt 回了 `KIMI_OK`）。這次改文件沒有對 2.4.1 二進位重跑。可選 flag 仍看 `kimi --help`，所以 `--print`、`--final-message-only`、`--no-thinking` 只有 help 有寫才會送。
+
+`kimi_status` 只在 `$KIMI_SHARE_DIR` 或 `~/.kimi/credentials/kimi-code.json`（或舊的 `~/.kimi/kimi.json`）找到 token 時，才把 CLI 標成已認證。CLI 2.x 的 OAuth 在 `~/.kimi-code/credentials/`（`KIMI_CODE_HOME`）。`kimi login` 成功仍可能在這裡顯示未認證。這不影響 `kimi_query` / `kimi_verify`。
+
+`kimi_list_sessions` 讀 `$KIMI_SHARE_DIR/sessions` 或 `~/.kimi/sessions`（`metadata.json`）。現在的 session 在 `~/.kimi-code/sessions/<workDirKey>/<sessionId>/`，列不出來。`kimi_resume` 仍把 `-S <id>` 傳給 CLI，所以你已經從 CLI 拿到的 id 可以恢復。
 
 > [!NOTE]
 > **`kimi analyze` subcommand 不存在。** MCP tool 命名為 `kimi_analyze`，但底層 CLI 使用上述 flags。如需直接呼叫 Kimi（除錯或腳本用途），請使用以上語法。
@@ -456,7 +423,7 @@ src/
 ├── kimi-api.ts        # 直連 Kimi Code API 的 client（kimi_query / kimi_verify）
 ├── kimi-runner.ts     # 生成 Kimi CLI 子行程、解析輸出、超時處理
 ├── cache-manager.ts   # session 快取（預熱、重用、失效）
-└── session-reader.ts  # 讀取 Kimi session 元資料 (~/.kimi/)
+└── session-reader.ts  # 舊版 session 元資料（~/.kimi/sessions，不是 ~/.kimi-code）
 ```
 
 ## 貢獻

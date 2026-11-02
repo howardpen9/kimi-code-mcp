@@ -5,14 +5,14 @@ English | **[中文說明](README_zh.md)**
 ---
 
 <div align="center">
-  <img src="assets/token-savings-hero.png" alt="kimi-code-mcp — delegate bulk codebase reading to Kimi Code (256K context) and cut Claude-side token cost by ~90%" width="760" />
+  <img src="assets/token-savings-hero.png" alt="Chart: kimi-code-mcp, Claude Code × kimi-for-coding (K2.7, 256K), about 90% less Claude-side tokens on three sample tasks" width="760" />
   <br />
-  <sub>Illustrative estimates. The ~90% is <b>Claude-side</b> token reduction on analysis-heavy tasks — <b>not</b> total cost: Kimi's own <a href="https://www.kimi.com/code/en">subscription</a> still applies. The monorepo row mirrors the example below; the PDF/commits rows are rough sketches.</sub>
+  <sub>Illustrative estimates. The ~90% is <b>Claude-side</b> token reduction on analysis-heavy tasks — <b>not</b> total cost: Kimi's own <a href="https://www.kimi.com/code/en">subscription</a> still applies. The monorepo row mirrors the example below; the PDF/commits rows are rough sketches. The graphic still says <code>kimi-for-coding</code> (K2.7, 256K). This server's default is model id <code>k3</code> (CLI alias <code>kimi-code/k3</code>).</sub>
 </div>
 
 ---
 
-**Delegate codebase analysis from Claude to Kimi Code (default: K3 / `k3`, 256K) — cut Claude-side token cost ~90%.**
+**Delegate codebase analysis from Claude to Kimi Code (default model `k3`, CLI alias `kimi-code/k3`) — cut Claude-side token cost ~90%.**
 
 | Task                         | Claude only | Claude + kimi-code-mcp | Claude-side savings |
 |------------------------------|-------------|------------------------|---------------------|
@@ -25,15 +25,29 @@ English | **[中文說明](README_zh.md)**
 ## Quick start
 
 ```bash
-# 1. Install Kimi CLI and log in
-curl -L code.kimi.com/install.sh | bash
+# 1. Install the current Kimi Code CLI (macOS / Linux) and log in.
+#    code.kimi.com/install.sh redirects to the archived Python kimi-cli. Do not use it.
+curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash
 kimi login
 
-# 2. Install via npm
+# Node.js >= 22.19.0 alternative:
+# npm install -g @moonshot-ai/kimi-code
+
+# This server runs ~/.local/bin/kimi only. The installer puts the binary in
+# ~/.kimi-code/bin and adds that directory to your shell rc.
+mkdir -p "$HOME/.local/bin"
+ln -sfn "$HOME/.kimi-code/bin/kimi" "$HOME/.local/bin/kimi"
+
+# 2. Install this MCP server (Node.js >= 18)
 npm install -g kimi-mcp-server
 ```
 
-Add to `.mcp.json` (project-level or `~/.claude/mcp.json` for global):
+> [!WARNING]
+> On 2026-11-02 the npm registry only has `kimi-mcp-server@0.3.0`. Git `main` is 0.5.0 and is not published, so `npm install -g` does not yet default to `k3` or read `~/.kimi-code/config.toml`. Use [Install from source](#install-from-source) until 0.5.0 is published if you need the behavior on this page.
+
+Windows (PowerShell): `irm https://code.kimi.com/kimi-code/install.ps1 | iex`. The runner in this repo still expects the POSIX path `~/.local/bin/kimi`, so link the installed `kimi` binary there the same way.
+
+Project scope — commit `.mcp.json` at the repo root:
 
 ```json
 {
@@ -46,26 +60,32 @@ Add to `.mcp.json` (project-level or `~/.claude/mcp.json` for global):
 }
 ```
 
+User scope (all projects, stored in `~/.claude.json`, not `~/.claude/mcp.json`):
+
+```bash
+claude mcp add --scope user --transport stdio kimi-code -- npx -y kimi-mcp-server
+```
+
 Run `/mcp` in Claude Code to verify — you should see `kimi-code` with 8 tools.
 
-The MCP defaults to `k3` and explicitly passes `-m kimi-code/k3` for CLI calls.
-Override it with the tool's `model` argument or `KIMICODE_MODEL` / `KIMI_MODEL`
-(argument takes priority). Run `kimi provider list` to check installed aliases;
-the CLI's own default may differ from the MCP default.
+The MCP defaults to `k3` and passes `-m kimi-code/k3` on CLI calls.
+Override with the tool's `model` argument or `KIMICODE_MODEL` / `KIMI_MODEL`
+(argument wins). On CLI 2.4.1, `kimi provider list` prints `Default model: …` when a default is set.
+That value can differ from the MCP default. Switch inside the CLI with `/model`.
 
 > [!TIP]
-> **You don't need the CLI for the common case.** `kimi_query` and `kimi_verify` call the Kimi Code API directly — no Python CLI install or `kimi login` required. Just provide an API key via `$KIMICODE_API_KEY` or `~/.kimi/config.toml` (see [Kimi Code API Setup](#kimi-code-api-setup)). Only the codebase-reading tools (`kimi_analyze`, `kimi_resume`) need the CLI. See [Two backends: API vs CLI](#two-backends-api-vs-cli) for the full split.
+> **You don't need the CLI for the common case.** `kimi_query` and `kimi_verify` call the Kimi Code API directly — no CLI install or `kimi login` required. Set `$KIMICODE_API_KEY` (see [Kimi Code API Setup](#kimi-code-api-setup)). Only `kimi_analyze` and `kimi_resume` spawn the CLI. See [Two backends: API vs CLI](#two-backends-api-vs-cli).
 
 ## How it works
 
 1. **Claude calls the `kimi_analyze` tool** when a task needs bulk codebase reading.
-2. **MCP routes the request to Kimi Code** (`kimi-for-coding`, 256K context) — Kimi reads the entire codebase in one pass.
+2. **MCP routes the request to Kimi Code** (default `-m kimi-code/k3`) — Kimi reads the codebase from disk.
 3. **The result is piped back as a structured response** — Claude acts on it with precise, targeted edits.
 
 ```
 ┌──────────────┐  stdio/MCP   ┌──────────────┐  subprocess   ┌──────────────┐
 │  Claude Code │ ◄──────────► │ kimi-code-mcp│ ────────────► │ Kimi CLI     │
-│  (conductor) │              │ (MCP server) │               │ (256K ctx)   │
+│  (conductor) │              │ (MCP server) │               │ (k3)         │
 └──────────────┘              └──────────────┘               └──────────────┘
 ```
 
@@ -75,14 +95,14 @@ The server reaches Kimi two different ways, and **each tool uses the one that fi
 
 | Backend | How it talks to Kimi | What it needs | Sees your codebase? |
 |---------|----------------------|---------------|---------------------|
-| **Direct API** | HTTPS to `api.kimi.com/coding/v1` | An API key only (`$KIMICODE_API_KEY` or `~/.kimi/config.toml`) | ❌ No — you paste in the context |
+| **Direct API** | HTTPS to `api.kimi.com/coding/v1` (or `KIMI_BASE_URL`) | An API key (`$KIMICODE_API_KEY`, or `api_key` in `~/.kimi/config.toml` / `~/.kimi-code/config.toml`) | ❌ No — you paste in the context |
 | **Local CLI** | Spawns the `kimi` binary as a subprocess | CLI installed **and** `kimi login` done | ✅ Yes — reads files from disk |
 
 | Tool | Backend | Why |
 |------|---------|-----|
 | `kimi_query` | **API** (CLI only if no key configured) | Contextless Q&A — no codebase needed, so the API is simpler and has no login dependency |
 | `kimi_verify` | **API** | You pass the code/diff/claim inline; Kimi judges it as an independent third party |
-| `kimi_analyze` | **CLI** | Must read your whole codebase (256K ctx) from disk |
+| `kimi_analyze` | **CLI** | Reads the codebase from disk. Context follows the model window |
 | `kimi_resume` | **CLI** | Continues a stateful CLI session that holds prior codebase context |
 | `kimi_list_sessions`, `kimi_cache_*`, `kimi_status` | local | Read local session/cache metadata |
 
@@ -98,14 +118,14 @@ If you are an AI agent (Claude Code, a subagent, etc.) deciding when to call the
 - **Cross-check your own work before committing → `kimi_verify`.** Paste the actual diff/code/claim **plus the surrounding context** (goal, constraints, signatures). Kimi sees *only* the `context` string — no repo, no session history. Vague context → useless review.
 - **Quick model-agnostic programming question → `kimi_query`.** No codebase needed. Returns a different model's opinion.
 - **Need to understand a large/unfamiliar codebase → `kimi_analyze`** with `work_dir`. Prefer this over reading 50 files yourself; it's ~10× cheaper in Claude tokens. Requires the CLI to be installed and logged in.
-- **Drill deeper after an analyze → `kimi_resume`** with the returned `session_id` (retains up to 256K tokens of prior context).
+- **Drill deeper after an analyze → `kimi_resume`** with the returned `session_id` (the CLI session keeps its context; the window is the model's, not a fixed 256K).
 - **Don't know why a Kimi call failed → `kimi_status` first.** "Not authenticated" on the CLI does **not** affect `kimi_query`/`kimi_verify` (those use the API).
-- **Keep outputs lean.** Default `detail_level: summary` for orientation; raise to `normal`/`detailed` only when you need code snippets. Bigger output = more Claude tokens, defeating the purpose.
+- **Keep outputs lean.** The tool default is `detail_level: normal`. Pass `summary` for orientation; use `detailed` only when you need code snippets. Bigger output = more Claude tokens, defeating the purpose.
 - **Skip Kimi for small/single-file work** — Claude reading directly is faster under ~10 files.
 
 ---
 
-MCP server that connects [Kimi Code](https://www.kimi.com/code) (model `kimi-for-coding`, 256K context, auto-upgraded) with [Claude Code](https://docs.anthropic.com/en/docs/claude-code) — letting Claude orchestrate while Kimi handles the heavy reading.
+MCP server that connects [Kimi Code](https://www.kimi.com/code) (default model `k3`) with [Claude Code](https://code.claude.com/docs/en/mcp) — letting Claude orchestrate while Kimi handles the heavy reading.
 
 <div align="center">
   <img src="assets/llm-cost-vs-intelligence.png" alt="LLM Cost vs Intelligence — Kimi Code delivers frontier-level intelligence at a fraction of the cost" width="720" />
@@ -114,20 +134,35 @@ MCP server that connects [Kimi Code](https://www.kimi.com/code) (model `kimi-for
 </div>
 
 > [!TIP]
-> **Stop paying Claude to read files.** Kimi Code delivers frontier-class code intelligence at a fraction of the cost (see chart above). Delegate bulk codebase scanning to Kimi (256K context, near-zero cost) and let Claude focus on what it does best — reasoning, decisions, and precise code edits. One `kimi_analyze` call can replace 50+ file reads.
+> **Stop paying Claude to read files.** Kimi Code delivers frontier-class code intelligence at a fraction of the cost (see chart above). Delegate bulk codebase scanning to Kimi and let Claude focus on reasoning, decisions, and precise edits. One `kimi_analyze` call can replace 50+ file reads.
 
 ## What is Kimi Code?
 
-[**Kimi Code**](https://www.kimi.com/code/en) is an AI code agent by Moonshot AI. The model ID `kimi-for-coding` (1T MoE, 256K context) automatically receives backend upgrades — no version pinning required. It works across Terminal, IDE, and CLI — writing, debugging, refactoring, and analyzing code autonomously.
+[**Kimi Code**](https://www.kimi.com/code/en) is Moonshot AI's coding agent (terminal, IDE, and [Kimi Code CLI](https://www.kimi.com/code/docs/en/kimi-code-cli/guides/getting-started.html)). The CLI is the TypeScript package `@moonshot-ai/kimi-code`. Public docs list CLI **2.4.1** (2026-10-30). It reads and edits code, runs shell commands, searches files, and fetches web pages.
 
-Key specs:
-- **256K token context** — reads entire codebases in one pass
-- **Parallel agent spawning** — handles concurrent tasks
-- **Shell, file, and web access** — full developer toolchain
-- **Install**: `curl -L code.kimi.com/install.sh | bash`
+Model ids below are from the [Kimi Code model page](https://www.kimi.com/code/docs/en/kimi-code/models.html) and the alias prefix shipped in CLI 2.4.1 (`kimi-code/<id>` for the managed provider). Context is plan-dependent ("up to").
+
+| Model ID | CLI alias | What it is | Context |
+|----------|-----------|------------|---------|
+| `k3` | `kimi-code/k3` | K3. **This MCP's default.** | up to 1,048,576 |
+| `k3-256k` | `kimi-code/k3-256k` | K3, 256K window | 262,144 |
+| `k3.1-pro` | `kimi-code/k3.1-pro` | K3.1 Pro (3T-class, thinking only) | up to 1,048,576 |
+| `k3.1-pro-highspeed` | `kimi-code/k3.1-pro-highspeed` | Same model, higher speed, about 2× quota | up to 1,048,576 |
+| `kimi-for-coding` | `kimi-code/kimi-for-coding` | K2.8 Preview | up to 1,048,576 |
+| `kimi-for-coding-highspeed` | `kimi-code/kimi-for-coding-highspeed` | K2.7 Code Highspeed | 262,144 |
+
+This server rewrites only a short alias table before the call:
+
+| You pass | API `model` | CLI `-m` |
+|----------|-------------|----------|
+| `k3`, `kimi-code/k3`, `kimi-k3` | `k3` | `kimi-code/k3` |
+| `kimi-for-coding`, `kimi-code/kimi-for-coding`, `k2.7` | `kimi-for-coding` | `kimi-code/kimi-for-coding` |
+| anything else (`k3-256k`, `k3.1-pro`, `kimi-code/k3.1-pro`, …) | the string unchanged | the same string unchanged |
+
+`k2.7` is a leftover shortcut. It still sends `kimi-for-coding` (K2.8 Preview), not `kimi-for-coding-highspeed`. For any other id, the API wants the bare id and the CLI wants `kimi-code/<id>`. One `model` value cannot be both unless it is in the table above. Check `kimi provider list` or `/model` after login; a re-login can drop custom aliases.
 
 > [!WARNING]
-> **Kimi Code membership required.** All tools ultimately hit Kimi Code, which needs an active [Kimi Code plan](https://www.kimi.com/code/en). The API tools (`kimi_query`, `kimi_verify`) authenticate with an **API key**; the codebase tools (`kimi_analyze`, `kimi_resume`) additionally need the **CLI installed + `kimi login`**. See [kimi.com/code](https://www.kimi.com/code/en) for pricing tiers and quotas.
+> **Kimi Code membership required.** API tools (`kimi_query`, `kimi_verify`) need an **API key**. Codebase tools (`kimi_analyze`, `kimi_resume`) need the **CLI on `~/.local/bin/kimi` and `kimi login`**. Plans and quotas: [kimi.com/code](https://www.kimi.com/code/en).
 
 ## Install from source
 
@@ -152,129 +187,60 @@ cd kimi-code-mcp && npm install && npm run build
 ## Kimi Code API Setup
 
 > [!NOTE]
-> **Kimi Code API and Moonshot API are separate providers** — their API keys are not interchangeable.
+> **Kimi Code and the Kimi Platform (Moonshot) are separate.** Coding-plan ids (`k3`, `kimi-for-coding`) are not platform ids (`kimi-k3`, `kimi-k3.1-pro`). `kimi-k2-0905-preview` is discontinued. Keys are not interchangeable.
 
-Configure CLI OAuth and direct API access separately:
+CLI login and the direct API key are separate. `kimi login` does not give `kimi_query` / `kimi_verify` a key.
 
-### Option 1: OAuth Login (Recommended)
-
-For codebase analysis with the CLI, run:
+### Option 1: OAuth login (CLI tools)
 
 ```bash
 kimi login
 ```
 
-Complete authorization in the browser. Kimi Code 2.x manages its OAuth provider
-and configuration under `~/.kimi-code`; legacy installations use `~/.kimi`.
-Use `kimi provider list` to confirm that `kimi-code/k3` is available.
+This is the device-code flow (same credentials as `/login` in the TUI). The CLI writes config, sessions, and OAuth under `~/.kimi-code/` (`KIMI_CODE_HOME` overrides that directory). Legacy data may still sit in `~/.kimi`. After login, `kimi provider list` prints `Default model:` when one is set. It may not be `kimi-code/k3`. The managed provider id is `managed:kimi-code`.
 
 > [!NOTE]
-> **`zsh: command not found: kimi` after install?** The installer puts the binary at `~/.local/bin/kimi`, which may not be on your `PATH`. Add it (then restart your shell or open a new tab):
+> **`command not found: kimi`?** The current installer writes `~/.kimi-code/bin/kimi` and appends that directory to your shell rc. Open a new shell, or `source` the rc file it printed. This MCP does **not** search `PATH`. It only executes `~/.local/bin/kimi`:
 > ```bash
-> echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
+> mkdir -p "$HOME/.local/bin"
+> ln -sfn "$(command -v kimi)" "$HOME/.local/bin/kimi"
 > ```
-> The MCP server calls the binary by absolute path, so this only affects running `kimi` yourself in a terminal (e.g. for `kimi login`).
+> Use that link after either the install script or `npm install -g @moonshot-ai/kimi-code`.
 
-### Option 2: Manual API Key Configuration
+### Option 2: API key (direct API tools)
 
-API key discovery checks `KIMICODE_API_KEY`, `KIMI_CODE_API_KEY`, then `KIMI_API_KEY`.
-Config files are checked in this order: `$KIMI_SHARE_DIR/config.toml` (if set),
-`~/.kimi/config.toml`, then `~/.kimi-code/config.toml`. `KIMI_BASE_URL` overrides
-the API endpoint. OAuth login alone does not configure a key for the direct API tools.
-
-#### Get your API Key
-
-1. Visit [code.kimi.com](https://code.kimi.com)
-2. Sign in → **Settings** → **API Keys**
-3. Create a new key (starts with `sk-`, shown only once)
-
-#### Edit config file
-
-The examples below use the legacy CLI config format. The MCP also reads
-`api_key` / `base_url` from provider sections in `~/.kimi-code/config.toml`.
-For direct API access, setting `KIMICODE_API_KEY` is sufficient; model tables
-and CLI defaults do not control the MCP's model selection.
+Create a key in the [Kimi Code console](https://www.kimi.com/code/console). The MCP checks `KIMICODE_API_KEY`, then `KIMI_CODE_API_KEY`, then `KIMI_API_KEY`. `KIMI_BASE_URL` overrides the endpoint (default `https://api.kimi.com/coding/v1`; overseas coding host is `https://api.kimi.ai/coding/v1`).
 
 ```bash
-nano ~/.kimi/config.toml
+# ~/.zshrc or ~/.bashrc — this process must see it (Claude's MCP env, not only an interactive shell)
+export KIMICODE_API_KEY="sk-your-api-key"
+# export KIMI_BASE_URL="https://api.kimi.ai/coding/v1"
 ```
 
-Add:
+The CLI does **not** read `KIMICODE_API_KEY` from the environment. For the CLI, use `kimi login`, or set `api_key` / `api_key_env` in `~/.kimi-code/config.toml`. The MCP does **not** read `api_key_env`. It does expand `${VAR}` inside a quoted `api_key` when it parses TOML.
+
+Config search order: `$KIMI_SHARE_DIR/config.toml` (if set), `~/.kimi/config.toml`, then `~/.kimi-code/config.toml`. Only `api_key` and `base_url` under a `[providers.*]` table are used. `default_model` and the `[models.*]` table do not change the MCP's model.
+
+If you keep the key in the file instead of the environment, the current CLI shape is:
 
 ```toml
-[providers.kimi-code]
+default_model = "kimi-code/k3"
+
+[providers."managed:kimi-code"]
 type = "kimi"
 base_url = "https://api.kimi.com/coding/v1"
 api_key = "sk-your-api-key"
-
-[models.kimi-for-coding]
-provider = "kimi-code"
-model = "kimi-for-coding"
-max_context_size = 262144
-capabilities = ["thinking"]
-
-[defaults]
-model = "kimi-for-coding"
 ```
 
-#### Using environment variables (recommended for security)
+Do not paste that over a file `kimi login` already manages. An empty `api_key = ""` plus an `oauth` table is normal after login and is not a key this MCP can use. Prefer `KIMICODE_API_KEY` for the API tools.
 
-```bash
-# Add to ~/.zshrc (macOS) or ~/.bashrc (Linux)
-export KIMICODE_API_KEY="sk-your-api-key"
-```
+### Kimi Code vs Kimi Platform
 
-Then reference it in `config.toml`:
-
-```toml
-[providers.kimi-code]
-type = "kimi"
-base_url = "https://api.kimi.com/coding/v1"
-api_key = "${KIMICODE_API_KEY}"
-```
-
-### Multi-provider config example
-
-You can configure both Kimi Code and Moonshot side by side:
-
-```toml
-[providers.kimi-code]
-type = "kimi"
-base_url = "https://api.kimi.com/coding/v1"
-api_key = "${KIMICODE_API_KEY}"
-
-[providers.moonshot-cn]
-type = "kimi"
-base_url = "https://api.moonshot.cn/v1"
-api_key = "${MOONSHOT_API_KEY}"
-
-[models.kimi-for-coding]
-provider = "kimi-code"
-model = "kimi-for-coding"
-max_context_size = 262144
-capabilities = ["thinking"]
-
-[models.kimi-k2]
-provider = "moonshot-cn"
-model = "kimi-k2-0905-preview"
-max_context_size = 256000
-capabilities = ["thinking"]
-
-[defaults]
-model = "kimi-for-coding"
-```
-
-Switch models at any time with `/model` or `/model kimi-k2` in the CLI.
-
-### Kimi Code vs Moonshot
-
-| Feature | Kimi Code | Moonshot |
-|---------|-----------|----------|
-| Focus | Optimized for coding | General-purpose chat |
-| Endpoint | `api.kimi.com/coding/v1` | `api.moonshot.cn/v1` |
-| API Key | Separate — apply at [code.kimi.com](https://code.kimi.com) | Separate |
-| SearchWeb / FetchURL | Built-in | Not available |
-| Context | 262K | 256K |
+| | Kimi Code (this MCP) | Kimi Platform |
+|--|----------------------|---------------|
+| Endpoint | `https://api.kimi.com/coding/v1` (overseas `https://api.kimi.ai/coding/v1`) | Platform host, not the coding path |
+| Model ids | `k3`, `k3-256k`, `k3.1-pro`, `kimi-for-coding`, … | `kimi-k3`, `kimi-k3.1-pro`, … |
+| Keys | [Kimi Code console](https://www.kimi.com/code/console) | [platform.kimi.ai models](https://platform.kimi.ai/docs/models) |
 
 ## What You Can Do
 
@@ -282,18 +248,18 @@ Just tell Claude what you need. It will delegate to Kimi automatically:
 
 | Prompt | What happens |
 |--------|-------------|
-| "Analyze this codebase's architecture" | Kimi reads all files (256K ctx), Claude acts on the report |
+| "Analyze this codebase's architecture" | Kimi reads the tree (default `k3`), Claude acts on the report |
 | "Scan for security vulnerabilities, then review Kimi's findings" | Kimi audits, Claude cross-examines — AI pair review |
 | "Map all dependencies of the auth module, then plan the refactoring" | Kimi builds the dependency graph, Claude plans the changes |
 | "Review the recent changes for regressions and edge cases" | Kimi reviews full context (not just the diff), Claude synthesizes |
-| "Resume the last Kimi session and ask about the API design" | Kimi retains 256K tokens of context across sessions |
+| "Resume the last Kimi session and ask about the API design" | `kimi_resume` continues that CLI session |
 
 ## Why This Exists
 
 Claude Code is powerful but expensive. Every file it reads costs tokens. Meanwhile, many tasks — pre-reviewing large codebases, scanning for patterns, generating audit reports — are **high-certainty work** that doesn't need Claude's full reasoning power.
 
 > [!IMPORTANT]
-> **The cost equation:** Claude reads 50 files to understand your architecture = expensive. Kimi reads 50 files via `kimi_analyze` = near-zero cost. Claude then acts on Kimi's structured report = minimal tokens. **Total savings: 60-80% fewer Claude tokens on analysis-heavy tasks.**
+> **The cost equation:** Claude reads 50 files to understand your architecture = expensive. Kimi reads those files via `kimi_analyze` on the Kimi plan, not on Claude tokens. Claude then acts on the report. **About 60-80% fewer Claude tokens on analysis-heavy tasks.** The ~90% in the chart is an illustration, not a measured total.
 
 ### How It Saves Tokens
 
@@ -311,18 +277,18 @@ Claude Code is powerful but expensive. Every file it reads costs tokens. Meanwhi
                           └──────┬──────────────┬───────┘
                       precise    │              │  delegate
                       edits      │              │  bulk reading
-                      (tokens)   │              │  (FREE)
+                      (tokens)   │              │  (Kimi plan)
                                  ▼              ▼
                           ┌──────────┐   ┌──────────────┐
                           │ your     │   │  Kimi Code   │
-                          │ codebase │   │  - 256K ctx  │
+                          │ codebase │   │  - model k3  │
                           └──────────┘   │  - reads all │
                                          │  - reports   │
                                          └──────────────┘
 ```
 
 1. **Claude** receives your task → decides it needs codebase understanding
-2. **Claude** calls `kimi_analyze` via MCP → Kimi reads the entire codebase (256K context, near-zero cost)
+2. **Claude** calls `kimi_analyze` via MCP → Kimi reads the codebase (subscription cost, not Claude tokens)
 3. **Kimi** returns a structured analysis
 4. **Claude** acts on the analysis with precise, targeted edits
 
@@ -330,9 +296,9 @@ Claude Code is powerful but expensive. Every file it reads costs tokens. Meanwhi
 
 ### Mutual Code Review with Kimi Code
 
-`kimi-for-coding` is a 1T MoE model designed for deep code comprehension. This enables **AI pair review**:
+The default model is `k3` (K3). That is enough context for **AI pair review**:
 
-1. **Kimi pre-reviews** — 256K context means it sees the entire codebase at once: security issues, anti-patterns, dead code, architectural problems
+1. **Kimi pre-reviews** — one pass over the tree: security issues, anti-patterns, dead code, architectural problems
 2. **Claude cross-examines** — reviews Kimi's findings, challenges questionable items, adds its own insights
 3. **Two perspectives** — different models catch different things. What one misses, the other finds
 
@@ -357,13 +323,13 @@ Beyond ad-hoc analysis, you can use Kimi as a **dedicated reviewer** in your wor
 | Weekly | Full codebase sweep | Accumulated tech debt |
 | Pre-release | Security-focused audit | Ship with confidence |
 
-Each review session can be **resumed** (`kimi_resume`) — Kimi retains up to 256K tokens of context from previous sessions, building understanding over time.
+Each review session can be **resumed** (`kimi_resume`) if you have its CLI session id. Context follows that session's model window.
 
 ### What Kimi Reviews Well
 
 | Review Type | Why Kimi Excels |
 |-------------|----------------|
-| Security audit | 256K context sees full attack surface, not just isolated files |
+| Security audit | The model window covers the tree, not one file |
 | Dead code detection | Can trace imports/exports across entire codebase |
 | API consistency | Compares patterns across all endpoints simultaneously |
 | Dependency analysis | Maps full dependency graph in one pass |
@@ -376,9 +342,9 @@ Each review session can be **resumed** (`kimi_resume`) — Kimi retains up to 25
 | `kimi_analyze` | **CLI** — deep codebase analysis (architecture, audit, refactoring) | 10 min |
 | `kimi_query` | **API** — quick programming questions, no codebase context (CLI only if no key configured) | 2 min |
 | `kimi_verify` | **API** — independent third-party verification of code/diffs/claims; no CLI required, context-driven | 5 min |
-| `kimi_list_sessions` | List existing Kimi sessions with metadata | instant |
-| `kimi_resume` | **CLI** — resume a previous session (up to 256K token context) | 10 min |
-| `kimi_status` | Report API-configured state + CLI install/version/auth status | instant |
+| `kimi_list_sessions` | List legacy `~/.kimi/sessions` metadata (not `~/.kimi-code`) | instant |
+| `kimi_resume` | **CLI** — resume a session with `-S <id>` | 10 min |
+| `kimi_status` | API key state, plus CLI version/auth from `~/.local/bin/kimi` and `~/.kimi` | instant |
 | `kimi_cache_status` | View session cache statistics and performance metrics | instant |
 | `kimi_cache_invalidate` | Manually invalidate cached sessions (by dir or all) | instant |
 
@@ -431,14 +397,14 @@ Under the hood:
 
 1. Claude Code calls an MCP tool (e.g., `kimi_analyze`)
 2. This server spawns the `kimi` CLI with the prompt and codebase path
-3. Kimi autonomously reads files, analyzes the code (up to 256K tokens)
+3. Kimi reads files and analyzes the code (context is the model window; default `k3` is up to 1M on eligible plans)
 4. The result is parsed from Kimi's JSON output and returned to Claude Code
 5. Claude acts on the structured results — edits, plans, or further analysis
 
 ### CLI Invocation Reference
 
-The MCP server inspects `kimi --help` and calls the installed CLI in non-interactive mode.
-For Kimi Code 2.x:
+The MCP server runs `~/.local/bin/kimi`, reads `kimi --help`, and calls that binary in non-interactive mode.
+The flags below match the [Kimi Code CLI command reference](https://www.kimi.com/code/docs/en/kimi-code-cli/reference/kimi-command.html) through **2.4.1** (2026-10-30):
 
 ```bash
 cd <path>
@@ -466,9 +432,11 @@ Check `kimi provider list` and update any explicit `model`, `KIMICODE_MODEL`, or
 `KIMI_MODEL` override to an available alias. The MCP already defaults to the
 official `kimi-code/k3` alias; it does not require the helper's custom alias.
 
-Validated with Kimi Code **2.1.1**: a minimal K3 prompt returned `KIMI_OK`
-after re-login. Regression tests cover modern and legacy
-CLI flags, resumed session IDs, authentication errors, and cache warmup.
+In-repo tests fixture the **2.1.1** JSONL shape (a minimal K3 prompt returned `KIMI_OK` after re-login). They were not re-run against the 2.4.1 binary for this doc update. Flag selection still comes from `kimi --help`, so `--print`, `--final-message-only`, and `--no-thinking` are sent only when that help text lists them.
+
+`kimi_status` marks the CLI authenticated only when it finds tokens in `$KIMI_SHARE_DIR` or `~/.kimi/credentials/kimi-code.json` (or a legacy `~/.kimi/kimi.json`). CLI 2.x stores OAuth under `~/.kimi-code/credentials/` (`KIMI_CODE_HOME`). A working `kimi login` can still show "Not authenticated" there. That does not affect `kimi_query` / `kimi_verify`.
+
+`kimi_list_sessions` reads `$KIMI_SHARE_DIR/sessions` or `~/.kimi/sessions` (`metadata.json`). Current sessions live in `~/.kimi-code/sessions/<workDirKey>/<sessionId>/` and are not listed. `kimi_resume` still passes `-S <id>` through, so an id you already have from the CLI can be resumed.
 
 > [!NOTE]
 > There is no `kimi analyze` subcommand. The MCP tool is named `kimi_analyze`, but the underlying CLI uses the flags above. Use this syntax to call Kimi directly for debugging or scripting.
@@ -490,11 +458,11 @@ For development (auto-recompile on changes):
 
 ## npm
 
-Published as [`kimi-mcp-server`](https://www.npmjs.com/package/kimi-mcp-server) on npm.
+Published as [`kimi-mcp-server`](https://www.npmjs.com/package/kimi-mcp-server) on npm. The registry copy checked on 2026-11-02 is **0.3.0**; this tree is **0.5.0**.
 
 ```bash
-npx kimi-mcp-server          # run directly
-npm install -g kimi-mcp-server # install globally
+npx kimi-mcp-server            # registry build, currently 0.3.0
+npm install -g kimi-mcp-server
 ```
 
 ## Project Structure
@@ -505,7 +473,7 @@ src/
 ├── kimi-api.ts        # Direct Kimi Code API client (kimi_query / kimi_verify)
 ├── kimi-runner.ts     # Spawns kimi CLI, parses output, handles timeouts
 ├── cache-manager.ts   # Session cache (warmup, reuse, invalidation)
-└── session-reader.ts  # Reads Kimi session metadata from ~/.kimi/
+└── session-reader.ts  # Legacy session metadata (~/.kimi/sessions, not ~/.kimi-code)
 ```
 
 ## Contributing

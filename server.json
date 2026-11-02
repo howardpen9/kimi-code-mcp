@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.howardpen9/kimi-mcp-server",
-  "description": "MCP server for Claude Code × Kimi K2.5 (256K context) — delegate bulk codebase analysis to Kimi, save 60-80% Claude tokens. Session caching, token budget controls, bilingual docs.",
+  "description": "MCP server for Claude Code × Kimi Code (default model k3, CLI alias kimi-code/k3) — delegate bulk codebase analysis to Kimi and cut Claude-side token cost. Session caching, token budget controls, bilingual docs.",
   "repository": {
     "url": "https://github.com/howardpen9/kimi-code-mcp",
     "source": "github"

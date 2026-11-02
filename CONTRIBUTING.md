@@ -23,8 +23,9 @@ npm run build
 
 ## Prerequisites | 前置需求
 
-- Node.js >= 18
-- Kimi CLI installed: `uv tool install kimi-cli`
+- Node.js >= 18 (this MCP). The Kimi Code CLI npm package needs Node.js >= 22.19.0; the [install script](https://www.kimi.com/code/docs/en/kimi-code-cli/guides/getting-started.html) does not.
+- Kimi Code CLI installed (`curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash` or `npm install -g @moonshot-ai/kimi-code`). Do not use `uv tool install kimi-cli` — that package is the archived Python CLI.
+- Binary linked where this server looks: `mkdir -p "$HOME/.local/bin" && ln -sfn "$HOME/.kimi-code/bin/kimi" "$HOME/.local/bin/kimi"`
 - Kimi authenticated: `kimi login`
 
 ## Project Structure | 專案結構
