@@ -5,9 +5,9 @@ English | **[中文說明](README_zh.md)**
 ---
 
 <div align="center">
-  <img src="assets/token-savings-hero.png" alt="Chart: kimi-code-mcp, Claude Code × kimi-for-coding (K2.7, 256K), about 90% less Claude-side tokens on three sample tasks" width="760" />
+  <img src="assets/token-savings-hero.png" alt="Chart: kimi-code-mcp with Kimi Code CLI 2.4.1, default model k3 (alias kimi-code/k3). kimi-for-coding is K2.8 Preview. About 90% less Claude-side tokens on three sample tasks." width="760" />
   <br />
-  <sub>Illustrative estimates. The ~90% is <b>Claude-side</b> token reduction on analysis-heavy tasks — <b>not</b> total cost: Kimi's own <a href="https://www.kimi.com/code/en">subscription</a> still applies. The monorepo row mirrors the example below; the PDF/commits rows are rough sketches. The graphic still says <code>kimi-for-coding</code> (K2.7, 256K). This server's default is model id <code>k3</code> (CLI alias <code>kimi-code/k3</code>).</sub>
+  <sub>Illustrative estimates. The ~90% is <b>Claude-side</b> token reduction on analysis-heavy tasks — <b>not</b> total cost: Kimi's own <a href="https://www.kimi.com/code/en">subscription</a> still applies. The monorepo row mirrors the example below; the PDF/commits rows are rough sketches. Default model on the graphic is <code>k3</code> (CLI 2.4.1); <code>kimi-for-coding</code> is K2.8 Preview.</sub>
 </div>
 
 ---

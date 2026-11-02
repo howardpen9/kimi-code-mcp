@@ -5,9 +5,9 @@
 ---
 
 <div align="center">
-  <img src="assets/token-savings-hero.png" alt="圖表：kimi-code-mcp，Claude Code × kimi-for-coding（K2.7，256K），三個範例任務的 Claude 端 token 約少 90%" width="760" />
+  <img src="assets/token-savings-hero.png" alt="圖表：kimi-code-mcp，Kimi Code CLI 2.4.1，預設模型 k3（別名 kimi-code/k3）。kimi-for-coding 是 K2.8 Preview。三個範例任務的 Claude 端 token 約少 90%。" width="760" />
   <br />
-  <sub>示意估算。這個 ~90% 是 <b>Claude 端</b> 在分析密集任務上的 token 減少 —— <b>不是</b>總成本歸零:Kimi 自己的<a href="https://www.kimi.com/code/en">訂閱費</a>照算。monorepo 那列對應下方實際舉例,PDF/commits 兩列為粗略示意。圖上仍寫 <code>kimi-for-coding</code>（K2.7，256K）。本伺服器預設模型 id 是 <code>k3</code>（CLI 別名 <code>kimi-code/k3</code>）。</sub>
+  <sub>示意估算。這個 ~90% 是 <b>Claude 端</b> 在分析密集任務上的 token 減少 —— <b>不是</b>總成本歸零:Kimi 自己的<a href="https://www.kimi.com/code/en">訂閱費</a>照算。monorepo 那列對應下方實際舉例,PDF/commits 兩列為粗略示意。圖上預設是 <code>k3</code>（CLI 2.4.1）；<code>kimi-for-coding</code> 是 K2.8 Preview。</sub>
 </div>
 
 ---

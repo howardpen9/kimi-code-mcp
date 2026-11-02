@@ -26,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   2.4.1 (default `k3` / `kimi-code/k3`; `kimi-for-coding` is K2.8 Preview).
   Document that this server still launches `~/.local/bin/kimi` and reads legacy
   `~/.kimi` session and credential paths.
+- Replace the token-savings hero so it no longer says K2.7 / 256K. It now
+  labels CLI 2.4.1, default `k3`, and `kimi-for-coding` as K2.8 Preview.
 
 ## [0.5.0] - 2026-07-17
 
